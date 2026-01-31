@@ -56,6 +56,11 @@ DEFAULT_GUIDANCE_SCALE = 7.0
 DEFAULT_BATCH_SIZE = 1  # OpenRouter typically expects single output
 DEFAULT_AUDIO_FORMAT = "mp3"
 
+# Audio response format: "openrouter" or "openai"
+# - "openrouter": [{"audio_url": {"url": "data:audio/mpeg;base64,..."}}]
+# - "openai": {"data": "base64...", "transcript": "..."}
+AUDIO_RESPONSE_FORMAT = os.environ.get("AUDIO_RESPONSE_FORMAT", "openrouter")
+
 # Supported audio formats for input/output
 SUPPORTED_AUDIO_FORMATS = {"mp3", "wav", "flac", "ogg", "m4a", "aac"}
 
@@ -104,6 +109,60 @@ def _audio_to_base64_url(audio_path: str, audio_format: str = "mp3") -> str:
 
     b64_data = base64.b64encode(audio_data).decode("utf-8")
     return f"data:{mime_type};base64,{b64_data}"
+
+
+def _audio_to_base64(audio_path: str) -> str:
+    """Convert audio file to pure base64 string (without data URL prefix)."""
+    if not audio_path or not os.path.exists(audio_path):
+        return ""
+
+    with open(audio_path, "rb") as f:
+        audio_data = f.read()
+
+    return base64.b64encode(audio_data).decode("utf-8")
+
+
+def _format_lm_content(result: Dict[str, Any]) -> str:
+    """
+    Format LM generation result as content string.
+
+    If LM was used, returns formatted metadata and lyrics.
+    Otherwise returns a simple success message.
+    """
+    if not result.get("lm_used"):
+        return "Music generated successfully."
+
+    metadata = result.get("metadata", {})
+    lyrics = result.get("lyrics", "")
+
+    parts = []
+
+    # Add metadata section
+    meta_lines = []
+    if metadata.get("caption"):
+        meta_lines.append(f"**Caption:** {metadata['caption']}")
+    if metadata.get("bpm"):
+        meta_lines.append(f"**BPM:** {metadata['bpm']}")
+    if metadata.get("duration"):
+        meta_lines.append(f"**Duration:** {metadata['duration']}s")
+    if metadata.get("keyscale"):
+        meta_lines.append(f"**Key:** {metadata['keyscale']}")
+    if metadata.get("timesignature"):
+        meta_lines.append(f"**Time Signature:** {metadata['timesignature']}/4")
+    if metadata.get("language"):
+        meta_lines.append(f"**Language:** {metadata['language']}")
+
+    if meta_lines:
+        parts.append("## Metadata\n" + "\n".join(meta_lines))
+
+    # Add lyrics section
+    if lyrics and lyrics.strip() and lyrics.strip().lower() not in ("[inst]", "[instrumental]"):
+        parts.append(f"## Lyrics\n{lyrics}")
+
+    if parts:
+        return "\n\n".join(parts)
+    else:
+        return "Music generated successfully."
 
 
 def _base64_to_temp_file(b64_data: str, audio_format: str = "mp3") -> str:
@@ -548,14 +607,18 @@ async def _sync_generation(
     gen_params: Dict[str, Any],
     model_id: str,
     audio_format: str,
-) -> ChatCompletionResponse:
+):
     """
     Synchronous music generation (waits for completion).
 
-    Returns a complete ChatCompletionResponse with generated audio.
+    Returns a complete response with generated audio.
+    Response format controlled by AUDIO_RESPONSE_FORMAT:
+    - "openrouter": [{"type": "audio_url", "audio_url": {"url": "data:audio/mpeg;base64,..."}}]
+    - "openai": {"data": "base64...", "transcript": "..."}
     """
     from concurrent.futures import ThreadPoolExecutor
     import functools
+    from fastapi.responses import JSONResponse
 
     completion_id = _generate_completion_id()
     created_timestamp = int(time.time())
@@ -567,7 +630,7 @@ async def _sync_generation(
         if executor is None:
             executor = ThreadPoolExecutor(max_workers=1)
 
-        print(f"[OpenRouter] _sync_generation: Starting generation...")
+        print(f"[OpenRouter] _sync_generation: Starting generation... (format={AUDIO_RESPONSE_FORMAT})")
 
         # Use functools.partial instead of lambda for better compatibility
         gen_func = functools.partial(_run_generation, state, gen_params)
@@ -575,42 +638,70 @@ async def _sync_generation(
 
         print(f"[OpenRouter] _sync_generation: Generation completed, result={result.get('success')}")
 
-        # Build response
-        audio_outputs = []
+        # Build response based on AUDIO_RESPONSE_FORMAT
+        audio_obj = None
         text_content = "Music generated successfully."
 
         if result.get("success"):
-            audio_paths = result.get("audio_paths", [])
-            for path in audio_paths:
-                if path and os.path.exists(path):
-                    b64_url = _audio_to_base64_url(path, audio_format)
-                    if b64_url:
-                        audio_outputs.append(AudioOutput(
-                            audio_url=AudioOutputUrl(url=b64_url)
-                        ))
+            # Format content with LM results if available
+            text_content = _format_lm_content(result)
 
-            # Add generation info to text content
-            gen_info = result.get("generation_info", "")
-            if gen_info:
-                text_content = f"Music generated successfully.\n\n{gen_info}"
+            audio_paths = result.get("audio_paths", [])
+            print(f"[OpenRouter] _sync_generation: audio_paths={audio_paths}")
+
+            if audio_paths:
+                audio_path = audio_paths[0]
+                if audio_path and os.path.exists(audio_path):
+                    # Get lyrics for transcript
+                    lyrics = result.get("lyrics", "") or gen_params.get("lyrics", "")
+
+                    if AUDIO_RESPONSE_FORMAT == "openai":
+                        # OpenAI format: {"data": "base64...", "transcript": "..."}
+                        b64_data = _audio_to_base64(audio_path)
+                        if b64_data:
+                            audio_obj = {
+                                "data": b64_data,
+                                "transcript": lyrics,
+                            }
+                            print(f"[OpenRouter] _sync_generation: Audio encoded (openai format), data_len={len(b64_data)}")
+                    else:
+                        # OpenRouter format: [{"type": "audio_url", "audio_url": {"url": "data:..."}}]
+                        b64_url = _audio_to_base64_url(audio_path, audio_format)
+                        if b64_url:
+                            audio_obj = [{
+                                "type": "audio_url",
+                                "audio_url": {
+                                    "url": b64_url
+                                }
+                            }]
+                            print(f"[OpenRouter] _sync_generation: Audio encoded (openrouter format), url_len={len(b64_url)}")
         else:
             error_msg = result.get("error", "Unknown error")
             text_content = f"Music generation failed: {error_msg}"
 
-        return ChatCompletionResponse(
-            id=completion_id,
-            created=created_timestamp,
-            model=model_id,
-            choices=[Choice(
-                index=0,
-                message=AssistantMessage(
-                    content=text_content,
-                    audio=audio_outputs if audio_outputs else None,
-                ),
-                finish_reason="stop",
-            )],
-            usage=Usage(),
-        )
+        # Build response
+        response_data = {
+            "id": completion_id,
+            "object": "chat.completion",
+            "created": created_timestamp,
+            "model": model_id,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": text_content,
+                    "audio": audio_obj,
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            },
+        }
+
+        return JSONResponse(content=response_data)
 
     except Exception as e:
         raise HTTPException(
@@ -629,77 +720,201 @@ async def _stream_generation(
     Streaming music generation with SSE events.
 
     Yields SSE events during generation and final audio data.
+
+    Response format controlled by AUDIO_RESPONSE_FORMAT:
+    - "openrouter": [{"audio_url": {"url": "data:audio/mpeg;base64,..."}}]
+    - "openai": {"data": "base64...", "transcript": "..."}
     """
     from concurrent.futures import ThreadPoolExecutor
     import functools
+    import sys
 
     completion_id = _generate_completion_id()
     created_timestamp = int(time.time())
 
-    def _make_chunk(delta: DeltaContent, finish_reason: Optional[str] = None) -> str:
-        chunk = ChatCompletionChunk(
-            id=completion_id,
-            created=created_timestamp,
-            model=model_id,
-            choices=[StreamChoice(
-                index=0,
-                delta=delta,
-                finish_reason=finish_reason,
-            )],
-        )
-        return f"data: {chunk.model_dump_json()}\n\n"
+    def _make_chunk_json(
+        content: Optional[str] = None,
+        role: Optional[str] = None,
+        audio: Optional[Any] = None,
+        finish_reason: Optional[str] = None,
+    ) -> str:
+        """Build SSE chunk"""
+        delta = {}
+        if role:
+            delta["role"] = role
+        if content is not None:
+            delta["content"] = content
+        if audio is not None:
+            delta["audio"] = audio
+
+        chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created_timestamp,
+            "model": model_id,
+            "choices": [{
+                "index": 0,
+                "delta": delta,
+                "finish_reason": finish_reason,
+            }],
+        }
+        return f"data: {json.dumps(chunk)}\n\n"
+
+    # IMPORTANT: Send initial chunk FIRST to establish the SSE connection
+    # This prevents client timeout during generation
+    print(f"[OpenRouter] Stream: Sending initial message... (format={AUDIO_RESPONSE_FORMAT})")
+    sys.stdout.flush()
+    yield _make_chunk_json(role="assistant", content="Generating music")
+    # Small delay to ensure the chunk is sent
+    await asyncio.sleep(0)
+
+    # Now start generation in background
+    print("[OpenRouter] Stream: Starting generation in executor...")
+    sys.stdout.flush()
+
+    loop = asyncio.get_running_loop()
+    executor = getattr(state, "executor", None)
+    if executor is None:
+        executor = ThreadPoolExecutor(max_workers=1)
+
+    gen_func = functools.partial(_run_generation, state, gen_params)
+
+    # Run generation with periodic heartbeats to keep connection alive
+    future = loop.run_in_executor(executor, gen_func)
+
+    # Send heartbeat dots while waiting for generation
+    heartbeat_interval = 2.0  # seconds
+    dot_count = 0
+    while not future.done():
+        try:
+            # Wait for either completion or timeout
+            await asyncio.wait_for(asyncio.shield(future), timeout=heartbeat_interval)
+            break  # Generation completed
+        except asyncio.TimeoutError:
+            # Send heartbeat to keep connection alive
+            dot_count += 1
+            yield _make_chunk_json(content=".")
+            await asyncio.sleep(0)
+            print(f"[OpenRouter] Stream: Heartbeat {dot_count} sent")
 
     try:
-        # Send initial message
-        print("[OpenRouter] Stream: Sending initial message...")
-        yield _make_chunk(DeltaContent(role="assistant", content="Generating music..."))
-
-        # Run generation in thread pool
-        loop = asyncio.get_running_loop()
-        executor = getattr(state, "executor", None)
-        if executor is None:
-            executor = ThreadPoolExecutor(max_workers=1)
-
-        print("[OpenRouter] Stream: Starting generation in executor...")
-        gen_func = functools.partial(_run_generation, state, gen_params)
-        result = await loop.run_in_executor(executor, gen_func)
+        result = await future
         print(f"[OpenRouter] Stream: Generation completed, success={result.get('success')}")
+        print(f"[OpenRouter] Stream: result keys={list(result.keys())}")
+        sys.stdout.flush()
+    except Exception as e:
+        print(f"[OpenRouter] Stream: Generation exception: {e}")
+        sys.stdout.flush()
+        import traceback
+        traceback.print_exc()
+        result = {"success": False, "error": str(e)}
 
-        # Send result
+    # Send result
+    try:
         if result.get("success"):
             audio_paths = result.get("audio_paths", [])
-            audio_outputs = []
             print(f"[OpenRouter] Stream: audio_paths={audio_paths}")
+            sys.stdout.flush()
 
-            for path in audio_paths:
-                if path and os.path.exists(path):
-                    b64_url = _audio_to_base64_url(path, audio_format)
-                    print(f"[OpenRouter] Stream: b64_url length={len(b64_url) if b64_url else 0}")
-                    if b64_url:
-                        audio_outputs.append(AudioOutput(
-                            audio_url=AudioOutputUrl(url=b64_url)
-                        ))
+            if audio_paths:
+                audio_path = audio_paths[0]
+                print(f"[OpenRouter] Stream: Processing audio_path={audio_path}, exists={os.path.exists(audio_path) if audio_path else False}")
+                sys.stdout.flush()
 
-            print(f"[OpenRouter] Stream: Sending completion chunk with {len(audio_outputs)} audio outputs...")
-            yield _make_chunk(DeltaContent(
-                content="\n\nGeneration complete.",
-                audio=audio_outputs if audio_outputs else None,
-            ))
+                if audio_path and os.path.exists(audio_path):
+                    # Get lyrics for transcript
+                    lyrics = result.get("lyrics", "") or gen_params.get("lyrics", "")
+                    # Format content with LM results
+                    lm_content = _format_lm_content(result)
+
+                    if AUDIO_RESPONSE_FORMAT == "openai":
+                        # OpenAI format: {"data": "base64...", "transcript": "..."}
+                        b64_data = _audio_to_base64(audio_path)
+                        print(f"[OpenRouter] Stream: b64_data length={len(b64_data) if b64_data else 0}")
+                        sys.stdout.flush()
+
+                        if b64_data:
+                            audio_obj = {
+                                "data": b64_data,
+                                "transcript": lyrics,
+                            }
+
+                            print(f"[OpenRouter] Stream: Sending audio chunk (openai format, data_len={len(b64_data)})")
+                            sys.stdout.flush()
+
+                            # Send LM content
+                            yield _make_chunk_json(content=f"\n\n{lm_content}")
+                            await asyncio.sleep(0)
+
+                            # Send audio data
+                            chunk_data = _make_chunk_json(audio=audio_obj)
+                            print(f"[OpenRouter] Stream: audio chunk_data length={len(chunk_data)}")
+                            sys.stdout.flush()
+                            yield chunk_data
+                            await asyncio.sleep(0)
+                        else:
+                            print("[OpenRouter] Stream: b64_data is empty!")
+                            sys.stdout.flush()
+                            yield _make_chunk_json(content="\n\nError: Failed to encode audio.")
+                    else:
+                        # OpenRouter format: [{"audio_url": {"url": "data:..."}}]
+                        b64_url = _audio_to_base64_url(audio_path, audio_format)
+                        print(f"[OpenRouter] Stream: b64_url length={len(b64_url) if b64_url else 0}")
+                        sys.stdout.flush()
+
+                        if b64_url:
+                            audio_list = [{
+                                "type": "audio_url",
+                                "audio_url": {
+                                    "url": b64_url
+                                }
+                            }]
+
+                            print(f"[OpenRouter] Stream: Sending audio chunk (openrouter format, url_len={len(b64_url)})")
+                            sys.stdout.flush()
+
+                            # Send LM content
+                            yield _make_chunk_json(content=f"\n\n{lm_content}")
+                            await asyncio.sleep(0)
+
+                            # Send audio data
+                            chunk_data = _make_chunk_json(audio=audio_list)
+                            print(f"[OpenRouter] Stream: audio chunk_data length={len(chunk_data)}")
+                            sys.stdout.flush()
+                            yield chunk_data
+                            await asyncio.sleep(0)
+                        else:
+                            print("[OpenRouter] Stream: b64_url is empty!")
+                            sys.stdout.flush()
+                            yield _make_chunk_json(content="\n\nError: Failed to encode audio.")
+                else:
+                    print(f"[OpenRouter] Stream: Audio file not found!")
+                    sys.stdout.flush()
+                    yield _make_chunk_json(content="\n\nError: Audio file not found.")
+            else:
+                print("[OpenRouter] Stream: No audio_paths in result!")
+                sys.stdout.flush()
+                yield _make_chunk_json(content="\n\nError: No audio files generated.")
         else:
             error_msg = result.get("error", "Unknown error")
             print(f"[OpenRouter] Stream: Generation failed: {error_msg}")
-            yield _make_chunk(DeltaContent(content=f"\n\nError: {error_msg}"))
+            yield _make_chunk_json(content=f"\n\nError: {error_msg}")
 
         # Send finish
         print("[OpenRouter] Stream: Sending finish chunk...")
-        yield _make_chunk(DeltaContent(), finish_reason="stop")
+        sys.stdout.flush()
+        yield _make_chunk_json(finish_reason="stop")
         yield "data: [DONE]\n\n"
+        await asyncio.sleep(0)
         print("[OpenRouter] Stream: All chunks sent successfully")
+        sys.stdout.flush()
 
     except Exception as e:
-        print(f"[OpenRouter] Stream: Exception occurred: {e}")
-        yield _make_chunk(DeltaContent(content=f"\n\nError: {str(e)}"))
-        yield _make_chunk(DeltaContent(), finish_reason="error")
+        print(f"[OpenRouter] Stream: Exception occurred while sending chunks: {e}")
+        import traceback
+        traceback.print_exc()
+        yield _make_chunk_json(content=f"\n\nError: {str(e)}")
+        yield _make_chunk_json(finish_reason="error")
         yield "data: [DONE]\n\n"
 
 
@@ -842,10 +1057,43 @@ def _run_generation(state: Any, gen_params: Dict[str, Any]) -> Dict[str, Any]:
         audio_paths = [audio["path"] for audio in result.audios if audio.get("path")]
         print(f"[OpenRouter] final audio_paths={audio_paths}")
 
+        # Extract LM metadata from result
+        lm_metadata = result.extra_outputs.get("lm_metadata", {})
+
+        # Build metadata dict for response
+        metadata = {
+            "caption": prompt,
+            "lyrics": lyrics,
+            "bpm": gen_params.get("bpm"),
+            "duration": gen_params.get("audio_duration"),
+            "keyscale": gen_params.get("key_scale"),
+            "timesignature": gen_params.get("time_signature"),
+            "language": gen_params.get("vocal_language"),
+            "instrumental": instrumental,
+        }
+
+        # Override with LM generated metadata if available
+        if lm_metadata:
+            if lm_metadata.get("caption"):
+                metadata["caption"] = lm_metadata.get("caption")
+            if lm_metadata.get("bpm"):
+                metadata["bpm"] = lm_metadata.get("bpm")
+            if lm_metadata.get("duration"):
+                metadata["duration"] = lm_metadata.get("duration")
+            if lm_metadata.get("keyscale"):
+                metadata["keyscale"] = lm_metadata.get("keyscale")
+            if lm_metadata.get("timesignature"):
+                metadata["timesignature"] = lm_metadata.get("timesignature")
+            if lm_metadata.get("language"):
+                metadata["language"] = lm_metadata.get("language")
+
         return {
             "success": True,
             "audio_paths": audio_paths,
             "generation_info": result.extra_outputs.get("generation_info", ""),
+            "lyrics": lyrics,
+            "metadata": metadata,
+            "lm_used": llm_handler is not None and llm_initialized,
         }
 
     except Exception as e:
