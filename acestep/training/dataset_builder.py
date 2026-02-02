@@ -21,6 +21,8 @@ import torch
 import torchaudio
 from loguru import logger
 
+from acestep.constants import SFT_GEN_PROMPT, DEFAULT_DIT_INSTRUCTION
+
 
 # Supported audio formats
 SUPPORTED_AUDIO_FORMATS = {'.wav', '.mp3', '.flac', '.ogg', '.opus'}
@@ -1010,8 +1012,28 @@ class DatasetBuilder:
 
                 # Step 4: Encode caption/genre text (per-sample override > global ratio)
                 caption = sample.get_training_prompt(self.metadata.tag_position, use_genre=use_genre)
+
+                # 构造 metas 字符串（与推理时 handler.py _dict_to_meta_string 格式一致）
+                metas_str = (
+                    f"- bpm: {sample.bpm if sample.bpm else 'N/A'}\n"
+                    f"- timesignature: {sample.timesignature if sample.timesignature else 'N/A'}\n"
+                    f"- keyscale: {sample.keyscale if sample.keyscale else 'N/A'}\n"
+                    f"- duration: {sample.duration} seconds\n"
+                )
+
+                # 使用与推理相同的 SFT_GEN_PROMPT 格式
+                text_prompt = SFT_GEN_PROMPT.format(DEFAULT_DIT_INSTRUCTION, caption, metas_str)
+
+                # DEBUG: Print first sample's text_prompt for verification
+                if i == 0:
+                    logger.info(f"\n{'='*70}")
+                    logger.info("🔍 [DEBUG] DiT TEXT ENCODER INPUT (Training Preprocess)")
+                    logger.info(f"{'='*70}")
+                    logger.info(f"text_prompt:\n{text_prompt}")
+                    logger.info(f"{'='*70}\n")
+
                 text_inputs = text_tokenizer(
-                    caption,
+                    text_prompt,
                     padding="max_length",
                     max_length=256,
                     truncation=True,
@@ -1343,9 +1365,17 @@ class DatasetBuilder:
                 latent_length = target_latents.shape[1]
                 attention_mask = torch.ones(1, latent_length, device=device, dtype=dtype)
 
-                # Encode caption (WITHOUT custom_tag)
+                # Encode caption (WITHOUT custom_tag) - 使用与推理相同的 SFT_GEN_PROMPT 格式
+                metas_str = (
+                    f"- bpm: {sample.bpm if sample.bpm else 'N/A'}\n"
+                    f"- timesignature: {sample.timesignature if sample.timesignature else 'N/A'}\n"
+                    f"- keyscale: {sample.keyscale if sample.keyscale else 'N/A'}\n"
+                    f"- duration: {sample.duration} seconds\n"
+                )
+                text_prompt = SFT_GEN_PROMPT.format(DEFAULT_DIT_INSTRUCTION, base_caption, metas_str)
+
                 text_inputs = text_tokenizer(
-                    base_caption,
+                    text_prompt,
                     padding="max_length",
                     max_length=256,
                     truncation=True,

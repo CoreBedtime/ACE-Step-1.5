@@ -1845,7 +1845,17 @@ class AceStepHandler:
             
             # Format text prompt with custom instruction (using LM-generated caption if available)
             text_prompt = SFT_GEN_PROMPT.format(instruction, actual_caption, parsed_metas[i])
-            
+
+            # DEBUG: Print DiT text encoder input
+            if i == 0:  # Only print first batch item
+                print("\n" + "=" * 70)
+                print("🔍 [DEBUG] DiT TEXT ENCODER INPUT (Inference)")
+                print("=" * 70)
+                print(f"text_prompt:\n{text_prompt}")
+                print("-" * 70)
+                print(f"lyrics_text will be: {lyrics[i][:100]}...")
+                print("=" * 70 + "\n")
+
             # Tokenize text
             text_inputs_dict = self.text_tokenizer(
                 text_prompt,
