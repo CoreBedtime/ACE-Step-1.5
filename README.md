@@ -124,6 +124,12 @@ Both scripts support:
 - ✅ Optional Git update check before startup
 - ✅ Customizable language, models, and parameters
 
+**📖 Windows Portable Users:** See the [Windows Portable Package Guide](./WINDOWS_PORTABLE_GUIDE.md) for:
+- How to configure service settings (Flash Attention, models, etc.)
+- Why the Service Configuration tab may be hidden
+- Troubleshooting common issues
+- All configurable settings reference
+
 #### 📝 Configuration
 
 Edit the scripts to customize settings:
