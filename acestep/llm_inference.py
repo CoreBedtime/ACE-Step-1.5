@@ -55,8 +55,9 @@ class LLMHandler:
         # Shared HuggingFace model for perplexity calculation
         self._hf_model_for_scoring = None
         
-        # Interrupt mechanism for stopping generation
+        # Interrupt mechanism for stopping generation (thread-safe)
         self._stop_event = threading.Event()
+        self._generation_lock = threading.Lock()  # Protect _generation_in_progress
         self._generation_in_progress = False
 
     def _get_checkpoint_dir(self) -> str:
@@ -75,7 +76,8 @@ class LLMHandler:
     def clear_stop(self):
         """Clear stop request (call before starting new generation)"""
         self._stop_event.clear()
-        self._generation_in_progress = False
+        with self._generation_lock:
+            self._generation_in_progress = False
     
     def is_stop_requested(self) -> bool:
         """Check if stop has been requested"""
@@ -83,7 +85,13 @@ class LLMHandler:
     
     def is_generation_in_progress(self) -> bool:
         """Check if generation is currently in progress"""
-        return self._generation_in_progress
+        with self._generation_lock:
+            return self._generation_in_progress
+    
+    def _set_generation_in_progress(self, in_progress: bool):
+        """Set generation in progress flag (thread-safe)"""
+        with self._generation_lock:
+            self._generation_in_progress = in_progress
 
     def get_available_5hz_lm_models(self) -> List[str]:
         """Scan and return all model directory names starting with 'acestep-5Hz-lm-'"""
@@ -959,12 +967,12 @@ class LLMHandler:
         
         # Clear any previous stop request and mark generation as in progress
         self.clear_stop()
-        self._generation_in_progress = True
+        self._set_generation_in_progress(True)
 
         infer_type = (infer_type or "").strip().lower()
         if infer_type not in {"dit", "llm_dit"}:
             error_msg = f"invalid infer_type: {infer_type!r} (expected 'dit' or 'llm_dit')"
-            self._generation_in_progress = False
+            self._set_generation_in_progress(False)
             return {
                 "metadata": [] if (batch_size and batch_size > 1) else {},
                 "audio_codes": [] if (batch_size and batch_size > 1) else "",
@@ -1035,6 +1043,7 @@ class LLMHandler:
             phase1_time = time.time() - phase1_start
             
             if not cot_output_text:
+                self._set_generation_in_progress(False)
                 return {
                     "metadata": [] if is_batch else {},
                     "audio_codes": [] if is_batch else "",
@@ -1053,7 +1062,7 @@ class LLMHandler:
             # Check for interrupt after Phase 1
             if self.is_stop_requested():
                 logger.info("Generation cancelled by user after Phase 1")
-                self._generation_in_progress = False
+                self._set_generation_in_progress(False)
                 return {
                     "metadata": [] if is_batch else {},
                     "audio_codes": [] if is_batch else "",
@@ -1103,7 +1112,7 @@ class LLMHandler:
         # Check for interrupt before starting Phase 2
         if self.is_stop_requested():
             logger.info("Generation cancelled by user before Phase 2")
-            self._generation_in_progress = False
+            self._set_generation_in_progress(False)
             return {
                 "metadata": [] if is_batch else {},
                 "audio_codes": [] if is_batch else "",
@@ -1171,6 +1180,7 @@ class LLMHandler:
             except Exception as e:
                 error_msg = f"Error in batch codes generation: {str(e)}"
                 logger.error(error_msg)
+                self._set_generation_in_progress(False)
                 return {
                     "metadata": [],
                     "audio_codes": [],
@@ -1200,6 +1210,7 @@ class LLMHandler:
             logger.info(f"Batch Phase 2 completed in {phase2_time:.2f}s. Generated codes: {codes_counts}")
             
             total_time = phase1_time + phase2_time
+            self._set_generation_in_progress(False)
             return {
                 "metadata": metadata_list,
                 "audio_codes": audio_codes_list,
@@ -1243,6 +1254,7 @@ class LLMHandler:
             
             if not codes_output_text:
                 total_time = phase1_time + phase2_time
+                self._set_generation_in_progress(False)
                 return {
                     "metadata": metadata,
                     "audio_codes": "",
@@ -1266,7 +1278,7 @@ class LLMHandler:
             logger.info(f"Phase 2 completed in {phase2_time:.2f}s. Generated {codes_count} audio codes")
             
             total_time = phase1_time + phase2_time
-            self._generation_in_progress = False
+            self._set_generation_in_progress(False)
             return {
                 "metadata": metadata,
                 "audio_codes": audio_codes,
