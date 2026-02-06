@@ -2388,16 +2388,21 @@ class AceStepHandler:
         """
         B, C, T = latents.shape
         
-        if self.device == "mps":
+        # Check device type (handle both string and torch.device)
+        device_type = self.device if isinstance(self.device, str) else self.device.type
+        if device_type == "mps":
             # MPS conv1d has an output length limit; use smaller chunks to avoid it.
             max_chunk_size = 32
             if chunk_size > max_chunk_size:
-                logger.warning(
-                    f"[tiled_decode] MPS device detected; reducing chunk_size from {chunk_size} "
-                    f"to {max_chunk_size} to avoid MPS conv output limit."
-                )
+                orig_chunk_size = chunk_size
+                orig_overlap = overlap
                 chunk_size = max_chunk_size
                 overlap = min(overlap, max(1, chunk_size // 4))
+                logger.warning(
+                    f"[tiled_decode] MPS device detected; reducing chunk_size from {orig_chunk_size} "
+                    f"to {max_chunk_size} and overlap from {orig_overlap} to {overlap} "
+                    f"to avoid MPS conv output limit."
+                )
         
         # If short enough, decode directly
         if T <= chunk_size:
