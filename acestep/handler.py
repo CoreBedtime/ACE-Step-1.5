@@ -530,15 +530,17 @@ class AceStepHandler:
                 self.model.config._attn_implementation = attn_implementation
                 self.config = self.model.config
                 # Move model to device and set dtype
+                # Use _recursive_to_device to handle pre-quantized checkpoints (e.g., AffineQuantizedTensor)
+                # which can fail on newer GPU architectures (e.g., Blackwell/RTX 50-series)
                 if not self.offload_to_cpu:
-                    self.model = self.model.to(device).to(self.dtype)
+                    self._recursive_to_device(self.model, device, self.dtype)
                 else:
                     # If offload_to_cpu is True, check if we should keep DiT on GPU
                     if not self.offload_dit_to_cpu:
                         logger.info(f"[initialize_service] Keeping main model on {device} (persistent)")
-                        self.model = self.model.to(device).to(self.dtype)
+                        self._recursive_to_device(self.model, device, self.dtype)
                     else:
-                        self.model = self.model.to("cpu").to(self.dtype)
+                        self._recursive_to_device(self.model, "cpu", self.dtype)
                 self.model.eval()
                 
                 if compile_model:
@@ -588,12 +590,13 @@ class AceStepHandler:
                 self.vae = AutoencoderOobleck.from_pretrained(vae_checkpoint_path)
                 if not self.offload_to_cpu:
                     # Keep VAE in GPU precision when resident on accelerator.
+                    # Use _recursive_to_device to handle pre-quantized checkpoints
                     vae_dtype = self._get_vae_dtype(device)
-                    self.vae = self.vae.to(device).to(vae_dtype)
+                    self._recursive_to_device(self.vae, device, vae_dtype)
                 else:
                     # Use CPU-appropriate dtype when VAE is offloaded.
                     vae_dtype = self._get_vae_dtype("cpu")
-                    self.vae = self.vae.to("cpu").to(vae_dtype)
+                    self._recursive_to_device(self.vae, "cpu", vae_dtype)
                 self.vae.eval()
             else:
                 raise FileNotFoundError(f"VAE checkpoint not found at {vae_checkpoint_path}")
@@ -614,10 +617,11 @@ class AceStepHandler:
             if os.path.exists(text_encoder_path):
                 self.text_tokenizer = AutoTokenizer.from_pretrained(text_encoder_path)
                 self.text_encoder = AutoModel.from_pretrained(text_encoder_path)
+                # Use _recursive_to_device to handle pre-quantized checkpoints
                 if not self.offload_to_cpu:
-                    self.text_encoder = self.text_encoder.to(device).to(self.dtype)
+                    self._recursive_to_device(self.text_encoder, device, self.dtype)
                 else:
-                    self.text_encoder = self.text_encoder.to("cpu").to(self.dtype)
+                    self._recursive_to_device(self.text_encoder, "cpu", self.dtype)
                 self.text_encoder.eval()
             else:
                 raise FileNotFoundError(f"Text encoder not found at {text_encoder_path}")
