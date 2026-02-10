@@ -1943,65 +1943,6 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                     pred_clean = self.get_x0_from_noise(xt, vt, t_curr_bsz)
                     next_timestep = 1.0 - (float(step_idx + 1) / infer_steps)
                     xt = self.renoise(pred_clean, next_timestep)
-                elif infer_method == "jkass_quality":
-                    # DPM++ SDE (2nd Order Stochastic) for Flow Matching
-                    
-                    # Step 1: Predict x0 from current state
-                    x0_1 = xt - t_curr * vt
-                    
-                    # Step 2: Stochastic Predictor (Euler-SDE)
-                    # We move to t_prev and add noise
-                    xt_next_euler = self.renoise(x0_1, t_prev)
-                    
-                    # Step 3: Second Model Pass at the predicted next state
-                    x_next_batch = torch.cat([xt_next_euler, xt_next_euler], dim=0) if do_cfg_guidance else xt_next_euler
-                    t_next_tensor = t_prev * torch.ones((x_next_batch.shape[0],), device=device, dtype=dtype)
-                    
-                    decoder_outputs_2 = self.decoder(
-                        hidden_states=x_next_batch,
-                        timestep=t_next_tensor,
-                        timestep_r=t_next_tensor,
-                        attention_mask=attention_mask,
-                        encoder_hidden_states=encoder_hidden_states,
-                        encoder_attention_mask=encoder_attention_mask,
-                        context_latents=context_latents,
-                        use_cache=True,
-                        past_key_values=past_key_values,
-                    )
-                    vt_next = decoder_outputs_2[0]
-                    
-                    if do_cfg_guidance:
-                        pred_cond_2, pred_null_cond_2 = vt_next.chunk(2)
-                        apply_cfg_guidance = t_prev >= cfg_interval_start and t_prev <= cfg_interval_end
-                        if apply_cfg_guidance:
-                            if not use_adg:
-                                vt_next = apg_forward(
-                                    pred_cond=pred_cond_2,
-                                    pred_uncond=pred_null_cond_2,
-                                    guidance_scale=diffusion_guidance_sale,
-                                    momentum_buffer=momentum_buffer,
-                                    dims=[1],
-                                )
-                            else:
-                                vt_next = adg_forward(
-                                    latents=xt_next_euler,
-                                    noise_pred_cond=pred_cond_2,
-                                    noise_pred_uncond=pred_null_cond_2,
-                                    sigma=t_prev + 1e-8,
-                                    guidance_scale=diffusion_guidance_sale,
-                                )
-                        else:
-                            vt_next = pred_cond_2
-                    
-                    # Step 4: Predict x0 from the second pass
-                    x0_2 = xt_next_euler - t_prev * vt_next
-                    
-                    # Step 5: 2nd Order Correction
-                    # Combine the two x0 predictions for higher precision
-                    x0_avg = 0.5 * (x0_1 + x0_2)
-                    
-                    # Step 6: Final Stochastic Update
-                    xt = self.renoise(x0_avg, t_prev)
                 elif infer_method == "ode":
                     # Ordinary Differential Equation: Euler method
                     # dx/dt = -v, so x_{t+1} = x_t - v_t * dt

@@ -163,8 +163,8 @@ def adg_forward(
     # Calculate angle between conditional and unconditional predicted data
     latent_theta = torch.acos(
         call_cos_tensor(latent_hat_text.view(-1, c).to(float),
-                        latent_hat_uncond.reshape(-1, c).contiguous().to(float)))
-    latent_theta_new = torch.clip(weight * latent_theta, -angle_clip, angle_clip) if apply_clip else weight * latent_theta
+                        latent_hat_uncond.reshape(-1, c).contiguous().to(float))).view(n, t, 1)
+    latent_theta_new = (torch.clip(weight * latent_theta, -angle_clip, angle_clip) if apply_clip else weight * latent_theta).view(n, t, 1)
     proj, perp = compute_perpendicular_component(latent_diff, latent_hat_uncond)
     latent_v_new = torch.cos(latent_theta_new) * latent_hat_text
 
@@ -175,7 +175,7 @@ def adg_forward(
         latent_new = latent_new * torch.linalg.norm(latent_hat_text, dim=1, keepdim=True) / torch.linalg.norm(
             latent_new, dim=1, keepdim=True)
 
-    noise_pred = (latents - latent_new) / sigma
+    noise_pred = (latents - latent_new) / (sigma + 1e-8)
     noise_pred = noise_pred.reshape(n, t, c).to(latents.dtype)
     return noise_pred
 

@@ -39,11 +39,9 @@ def update_base_model():
             print(f"  ⚠️ Skip: {filename} not found in root directory")
 
     if updated_count == len(files_to_update):
-        print(f"
-✨ Successfully updated all {updated_count} implementation files.")
+        print(f"\n✨ Successfully updated all {updated_count} implementation files.")
     else:
-        print(f"
-⚠️ Update finished with some skips/errors ({updated_count}/{len(files_to_update)} files updated).")
+        print(f"\n⚠️ Update finished with some skips/errors ({updated_count}/{len(files_to_update)} files updated).")
 
 if __name__ == "__main__":
     update_base_model()
