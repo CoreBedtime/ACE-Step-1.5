@@ -142,6 +142,34 @@ def inject_lora_into_dit(
     return model, info
 
 
+def _normalize_saved_adapter(adapter_path: str) -> None:
+    """Collapse extra base_model.model. nesting in a saved adapter file.
+
+    Adapters saved from Fabric-wrapped models may have keys with multiple
+    base_model.model. prefixes.  This rewrites the safetensors file in-place
+    with normalised keys so that standard PeftModel.from_pretrained works.
+    """
+    st_path = os.path.join(adapter_path, "adapter_model.safetensors")
+    if not os.path.exists(st_path):
+        return
+    try:
+        from safetensors.torch import load_file, save_file
+        state = load_file(st_path)
+        normalized = {}
+        changed = False
+        for key, value in state.items():
+            k = key
+            while "base_model.model.base_model.model." in k:
+                k = k.replace("base_model.model.base_model.model.", "base_model.model.", 1)
+                changed = True
+            normalized[k] = value
+        if changed:
+            save_file(normalized, st_path)
+            logger.info(f"Normalized nested LoRA keys in {st_path}")
+    except Exception as e:
+        logger.warning(f"Could not normalize adapter keys: {e}")
+
+
 def save_lora_weights(
     model,
     output_dir: str,
@@ -160,9 +188,15 @@ def save_lora_weights(
     os.makedirs(output_dir, exist_ok=True)
     
     if hasattr(model, 'decoder') and hasattr(model.decoder, 'save_pretrained'):
+        # Get the actual PeftModel (unwrap Fabric wrapper if present)
+        decoder = model.decoder
+        if hasattr(decoder, '_forward_module'):
+            decoder = decoder._forward_module
         # Save PEFT adapter
         adapter_path = os.path.join(output_dir, "adapter")
-        model.decoder.save_pretrained(adapter_path)
+        decoder.save_pretrained(adapter_path)
+        # Normalize keys in saved file to collapse extra base_model.model. nesting
+        _normalize_saved_adapter(adapter_path)
         logger.info(f"LoRA adapter saved to {adapter_path}")
         return adapter_path
     elif save_full_model:

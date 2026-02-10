@@ -505,6 +505,7 @@ def _apply_optional_defaults(args, params_defaults: GenerationParams, config_def
         "lm_cfg_scale": params_defaults.lm_cfg_scale,
         "lm_top_k": params_defaults.lm_top_k,
         "lm_top_p": params_defaults.lm_top_p,
+        "lm_min_p": params_defaults.lm_min_p,
         "lm_negative_prompt": params_defaults.lm_negative_prompt,
         "use_cot_metas": params_defaults.use_cot_metas,
         "use_cot_caption": params_defaults.use_cot_caption,
@@ -864,7 +865,7 @@ def run_wizard(args, configure_only: bool = False, default_config_path: Optional
                 args.cfg_interval_start = _prompt_float("CFG interval start (0.0-1.0)", args.cfg_interval_start, 0.0, 1.0)
                 args.cfg_interval_end = _prompt_float("CFG interval end (0.0-1.0)", args.cfg_interval_end, 0.0, 1.0)
             args.shift = _prompt_float("Timestep shift (1.0-5.0)", args.shift, 1.0, 5.0)
-            args.infer_method = _prompt_with_default("Inference method (ode/sde)", args.infer_method)
+            args.infer_method = _prompt_with_default("Inference method (ode/sde/jkass_quality)", args.infer_method)
             timesteps_input = _prompt_with_default(
                 "Custom timesteps list (e.g., [0.97, 0.5, 0])",
                 args.timesteps,
@@ -884,6 +885,7 @@ def run_wizard(args, configure_only: bool = False, default_config_path: Optional
             args.lm_cfg_scale = _prompt_float("LM CFG scale", args.lm_cfg_scale)
             args.lm_top_k = _prompt_int("LM top-k (0 disables)", args.lm_top_k, min_value=0)
             args.lm_top_p = _prompt_float("LM top-p (0.0-1.0)", args.lm_top_p, 0.0, 1.0)
+            args.lm_min_p = _prompt_float("LM min-p (0.0-1.0)", args.lm_min_p, 0.0, 1.0)
             args.lm_negative_prompt = _prompt_with_default("LM negative prompt", args.lm_negative_prompt)
             args.use_cot_metas = _prompt_bool("Use CoT for metadata", args.use_cot_metas)
             args.use_cot_caption = _prompt_bool("Use CoT for caption refinement", args.use_cot_caption)
@@ -1066,6 +1068,7 @@ def main():
         "lm_cfg_scale": params_defaults.lm_cfg_scale,
         "lm_top_k": params_defaults.lm_top_k,
         "lm_top_p": params_defaults.lm_top_p,
+        "lm_min_p": params_defaults.lm_min_p,
         "use_cot_metas": params_defaults.use_cot_metas,
         "use_cot_caption": params_defaults.use_cot_caption,
         "use_cot_lyrics": params_defaults.use_cot_lyrics,

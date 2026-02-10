@@ -211,11 +211,11 @@ def create_generation_section(dit_handler, llm_handler, init_params=None, langua
                 )
                 lora_scale_slider = gr.Slider(
                     minimum=0.0,
-                    maximum=1.0,
+                    maximum=2.0,
                     value=1.0,
                     step=0.05,
                     label="LoRA Scale",
-                    info="LoRA influence strength (0=disabled, 1=full)",
+                    info="LoRA influence strength (0=disabled, 1=full, 2=double)",
                     scale=2,
                 )
                 lora_status = gr.Textbox(
@@ -546,7 +546,7 @@ def create_generation_section(dit_handler, llm_handler, init_params=None, langua
                     visible=True
                 )
                 infer_method = gr.Dropdown(
-                    choices=["ode", "sde"],
+                    choices=["ode", "sde", "jkass_quality"],
                     value="ode",
                     label=t("generation.infer_method_label"),
                     info=t("generation.infer_method_info"),
@@ -616,6 +616,15 @@ def create_generation_section(dit_handler, llm_handler, init_params=None, langua
                     step=0.01,
                     scale=1,
                     info=t("generation.lm_top_p_info")
+                )
+                lm_min_p = gr.Slider(
+                    label=t("generation.lm_min_p_label"),
+                    minimum=0.0,
+                    maximum=1.0,
+                    value=0.0,
+                    step=0.01,
+                    scale=1,
+                    info=t("generation.lm_min_p_info")
                 )
             
             with gr.Row():
@@ -764,6 +773,7 @@ def create_generation_section(dit_handler, llm_handler, init_params=None, langua
         "lm_cfg_scale": lm_cfg_scale,
         "lm_top_k": lm_top_k,
         "lm_top_p": lm_top_p,
+        "lm_min_p": lm_min_p,
         "lm_negative_prompt": lm_negative_prompt,
         "use_cot_metas": use_cot_metas,
         "use_cot_caption": use_cot_caption,

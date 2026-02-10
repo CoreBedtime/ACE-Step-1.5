@@ -12,10 +12,13 @@ from acestep.debug_utils import debug_start, debug_end
 # Debug logging - enable with NANOVLLM_DEBUG=1
 _DEBUG = os.environ.get("NANOVLLM_DEBUG", "0") == "1"
 
+
 def _debug_log(msg: str):
     """Print debug message if NANOVLLM_DEBUG is enabled"""
     if _DEBUG:
         print(f"[nanovllm DEBUG] {msg}", flush=True)
+
+
 from nanovllm.engine.sequence import Sequence
 from nanovllm.models.qwen3 import Qwen3ForCausalLM
 from nanovllm.layers.sampler import Sampler
@@ -27,14 +30,14 @@ import socket
 
 def find_available_port(start_port: int = 2333, max_attempts: int = 100) -> int:
     """Find an available port starting from start_port.
-    
+
     Args:
         start_port: The starting port number to check
         max_attempts: Maximum number of ports to try
-        
+
     Returns:
         An available port number
-        
+
     Raises:
         RuntimeError: If no available port is found within max_attempts
     """
@@ -43,20 +46,21 @@ def find_available_port(start_port: int = 2333, max_attempts: int = 100) -> int:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                s.bind(('localhost', port))
+                s.bind(("localhost", port))
                 return port
         except OSError:
             # Port is in use, try next one
             continue
-    raise RuntimeError(f"Could not find an available port starting from {start_port} after {max_attempts} attempts")
+    raise RuntimeError(
+        f"Could not find an available port starting from {start_port} after {max_attempts} attempts"
+    )
 
 
 class ModelRunner:
-
     def __init__(self, config: Config, rank: int, event: Event | list[Event]):
         # Enable capturing scalar outputs to avoid graph breaks from Tensor.item() calls
         torch._dynamo.config.capture_scalar_outputs = True
-        
+
         self.config = config
         hf_config = config.hf_config
         self.block_size = config.kvcache_block_size
@@ -68,11 +72,18 @@ class ModelRunner:
         print(f"[debug]dist_port: {dist_port}")
         # Use gloo backend on Windows, nccl on Linux/other platforms
         backend = "gloo" if sys.platform == "win32" else "nccl"
-        dist.init_process_group(backend, f"tcp://127.0.0.1:{dist_port}", world_size=self.world_size, rank=rank)
+        dist.init_process_group(
+            backend,
+            f"tcp://127.0.0.1:{dist_port}",
+            world_size=self.world_size,
+            rank=rank,
+        )
         torch.cuda.set_device(rank)
         default_dtype = torch.get_default_dtype()
         # Use dtype instead of deprecated torch_dtype
-        config_dtype = getattr(hf_config, 'dtype', getattr(hf_config, 'torch_dtype', torch.bfloat16))
+        config_dtype = getattr(
+            hf_config, "dtype", getattr(hf_config, "torch_dtype", torch.bfloat16)
+        )
 
         # Validate and convert config_dtype to a valid torch floating-point dtype
         # Default to bfloat16 for CUDA (required for Flash Attention 2)
@@ -81,17 +92,20 @@ class ModelRunner:
         elif isinstance(config_dtype, str):
             # Convert string dtype to torch dtype
             dtype_map = {
-                'float32': torch.float32,
-                'float16': torch.float16,
-                'bfloat16': torch.bfloat16,
-                'float64': torch.float64,
-                'torch.float32': torch.float32,
-                'torch.float16': torch.float16,
-                'torch.bfloat16': torch.bfloat16,
-                'torch.float64': torch.float64,
+                "float32": torch.float32,
+                "float16": torch.float16,
+                "bfloat16": torch.bfloat16,
+                "float64": torch.float64,
+                "torch.float32": torch.float32,
+                "torch.float16": torch.float16,
+                "torch.bfloat16": torch.bfloat16,
+                "torch.float64": torch.float64,
             }
             config_dtype = dtype_map.get(config_dtype.lower(), torch.bfloat16)
-        elif not isinstance(config_dtype, torch.dtype) or not config_dtype.is_floating_point:
+        elif (
+            not isinstance(config_dtype, torch.dtype)
+            or not config_dtype.is_floating_point
+        ):
             # If not a valid floating-point torch dtype, default to bfloat16
             config_dtype = torch.bfloat16
 
@@ -103,16 +117,16 @@ class ModelRunner:
         load_model(self.model, config.model)
         debug_end("load_model", _t0, prefix="tensor.vllm")
         self.sampler = Sampler()
-        
+
         # Pre-allocate buffers for sampling (optimization: avoid repeated tensor creation)
         # Must be called before warmup_model() since it uses these buffers
         self._allocate_sample_buffers()
-        
+
         self.warmup_model()
         self.allocate_kv_cache()
         if not self.enforce_eager:
             self.capture_cudagraph()
-        
+
         torch.set_default_device("cpu")
         torch.set_default_dtype(default_dtype)
 
@@ -130,34 +144,73 @@ class ModelRunner:
         _t0 = debug_start("_allocate_sample_buffers", prefix="tensor.vllm")
         max_bs = self.config.max_num_seqs
         max_tokens = self.config.max_num_batched_tokens
-        max_num_blocks = (self.config.max_model_len + self.block_size - 1) // self.block_size
-        
+        max_num_blocks = (
+            self.config.max_model_len + self.block_size - 1
+        ) // self.block_size
+
         # Pre-allocate pinned memory buffers on CPU for fast transfer
         # Must explicitly specify device="cpu" since default device may be "cuda"
-        self._cpu_temperatures = torch.zeros(max_bs, dtype=torch.float32, device="cpu", pin_memory=True)
-        self._cpu_cfg_scales = torch.zeros(max_bs, dtype=torch.float32, device="cpu", pin_memory=True)
-        self._cpu_top_ks = torch.zeros(max_bs, dtype=torch.int32, device="cpu", pin_memory=True)
-        self._cpu_top_ps = torch.zeros(max_bs, dtype=torch.float32, device="cpu", pin_memory=True)
-        self._cpu_repetition_penalties = torch.zeros(max_bs, dtype=torch.float32, device="cpu", pin_memory=True)
-        
+        self._cpu_temperatures = torch.zeros(
+            max_bs, dtype=torch.float32, device="cpu", pin_memory=True
+        )
+        self._cpu_cfg_scales = torch.zeros(
+            max_bs, dtype=torch.float32, device="cpu", pin_memory=True
+        )
+        self._cpu_top_ks = torch.zeros(
+            max_bs, dtype=torch.int32, device="cpu", pin_memory=True
+        )
+        self._cpu_top_ps = torch.zeros(
+            max_bs, dtype=torch.float32, device="cpu", pin_memory=True
+        )
+        self._cpu_min_ps = torch.zeros(
+            max_bs, dtype=torch.float32, device="cpu", pin_memory=True
+        )
+        self._cpu_repetition_penalties = torch.zeros(
+            max_bs, dtype=torch.float32, device="cpu", pin_memory=True
+        )
+
         # Pre-allocate decode buffers on CPU with pinned memory
-        self._cpu_input_ids = torch.zeros(max_bs, dtype=torch.int64, device="cpu", pin_memory=True)
-        self._cpu_positions = torch.zeros(max_bs, dtype=torch.int64, device="cpu", pin_memory=True)
-        self._cpu_slot_mapping = torch.zeros(max_bs, dtype=torch.int32, device="cpu", pin_memory=True)
-        self._cpu_context_lens = torch.zeros(max_bs, dtype=torch.int32, device="cpu", pin_memory=True)
-        
+        self._cpu_input_ids = torch.zeros(
+            max_bs, dtype=torch.int64, device="cpu", pin_memory=True
+        )
+        self._cpu_positions = torch.zeros(
+            max_bs, dtype=torch.int64, device="cpu", pin_memory=True
+        )
+        self._cpu_slot_mapping = torch.zeros(
+            max_bs, dtype=torch.int32, device="cpu", pin_memory=True
+        )
+        self._cpu_context_lens = torch.zeros(
+            max_bs, dtype=torch.int32, device="cpu", pin_memory=True
+        )
+
         # Pre-allocate prefill buffers on CPU with pinned memory (optimization to avoid repeated tensor creation)
-        self._cpu_prefill_input_ids = torch.zeros(max_tokens, dtype=torch.int64, device="cpu", pin_memory=True)
-        self._cpu_prefill_positions = torch.zeros(max_tokens, dtype=torch.int64, device="cpu", pin_memory=True)
-        self._cpu_prefill_cu_seqlens = torch.zeros(max_bs + 1, dtype=torch.int32, device="cpu", pin_memory=True)
-        self._cpu_prefill_slot_mapping = torch.zeros(max_tokens, dtype=torch.int32, device="cpu", pin_memory=True)
-        
+        self._cpu_prefill_input_ids = torch.zeros(
+            max_tokens, dtype=torch.int64, device="cpu", pin_memory=True
+        )
+        self._cpu_prefill_positions = torch.zeros(
+            max_tokens, dtype=torch.int64, device="cpu", pin_memory=True
+        )
+        self._cpu_prefill_cu_seqlens = torch.zeros(
+            max_bs + 1, dtype=torch.int32, device="cpu", pin_memory=True
+        )
+        self._cpu_prefill_slot_mapping = torch.zeros(
+            max_tokens, dtype=torch.int32, device="cpu", pin_memory=True
+        )
+
         # Pre-allocate block tables buffer (shared by both decode and prefill)
-        self._cpu_block_tables = torch.zeros(max_bs, max_num_blocks, dtype=torch.int32, device="cpu", pin_memory=True)
-        
+        self._cpu_block_tables = torch.zeros(
+            max_bs, max_num_blocks, dtype=torch.int32, device="cpu", pin_memory=True
+        )
+
         # Pre-allocate buffer for sequence token IDs (used in logits processor and sampler)
         # Max length is max_model_len since sequences can be that long
-        self._seq_token_ids_buffer = torch.zeros(max_bs, self.config.max_model_len, dtype=torch.int64, device="cpu", pin_memory=True)
+        self._seq_token_ids_buffer = torch.zeros(
+            max_bs,
+            self.config.max_model_len,
+            dtype=torch.int64,
+            device="cpu",
+            pin_memory=True,
+        )
         debug_end("_allocate_sample_buffers", _t0, prefix="tensor.vllm")
 
     def exit(self):
@@ -182,7 +235,7 @@ class ModelRunner:
         assert self.world_size > 1 and self.rank > 0
         self.event.wait()
         n = int.from_bytes(self.shm.buf[0:4], "little")
-        method_name, *args = pickle.loads(self.shm.buf[4:n+4])
+        method_name, *args = pickle.loads(self.shm.buf[4 : n + 4])
         self.event.clear()
         return method_name, args
 
@@ -191,7 +244,7 @@ class ModelRunner:
         data = pickle.dumps([method_name, *args])
         n = len(data)
         self.shm.buf[0:4] = n.to_bytes(4, "little")
-        self.shm.buf[4:n+4] = data
+        self.shm.buf[4 : n + 4] = data
         for event in self.event:
             event.set()
 
@@ -205,8 +258,13 @@ class ModelRunner:
         _t0 = debug_start("warmup_model", prefix="tensor.vllm")
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
-        max_num_batched_tokens, max_model_len = self.config.max_num_batched_tokens, self.config.max_model_len
-        num_seqs = min(max_num_batched_tokens // max_model_len, self.config.max_num_seqs)
+        max_num_batched_tokens, max_model_len = (
+            self.config.max_num_batched_tokens,
+            self.config.max_model_len,
+        )
+        num_seqs = min(
+            max_num_batched_tokens // max_model_len, self.config.max_num_seqs
+        )
         seqs = [Sequence([0] * max_model_len) for _ in range(num_seqs)]
         self.run(seqs, True)
         torch.cuda.empty_cache()
@@ -219,19 +277,30 @@ class ModelRunner:
         free, total = torch.cuda.mem_get_info()
         current = torch.cuda.memory_stats()["allocated_bytes.all.current"]
         num_kv_heads = hf_config.num_key_value_heads // self.world_size
-        head_dim = getattr(hf_config, "head_dim", hf_config.hidden_size // hf_config.num_attention_heads)
-        block_bytes = 2 * hf_config.num_hidden_layers * self.block_size * num_kv_heads * head_dim * self.dtype.itemsize
-        
+        head_dim = getattr(
+            hf_config,
+            "head_dim",
+            hf_config.hidden_size // hf_config.num_attention_heads,
+        )
+        block_bytes = (
+            2
+            * hf_config.num_hidden_layers
+            * self.block_size
+            * num_kv_heads
+            * head_dim
+            * self.dtype.itemsize
+        )
+
         # Calculate available memory for KV cache
         # After warmup_model, empty_cache has been called, so current represents model memory only
         # Use free memory but respect the gpu_memory_utilization limit
         target_total_usage = total * config.gpu_memory_utilization
         available_for_kv_cache = min(free * 0.9, target_total_usage - current)
-        
+
         # Ensure we have positive memory available
         if available_for_kv_cache <= 0:
             available_for_kv_cache = free * 0.5  # Fallback to 50% of free memory
-        
+
         config.num_kvcache_blocks = max(1, int(available_for_kv_cache) // block_bytes)
         if config.num_kvcache_blocks <= 0:
             raise RuntimeError(
@@ -248,7 +317,14 @@ class ModelRunner:
             f"(free: {free / 1024**3:.2f} GB, used: {current / 1024**3:.2f} GB, "
             f"target: {target_total_usage / 1024**3:.2f} GB, block: {block_bytes / 1024**2:.2f} MB)"
         )
-        self.kv_cache = torch.empty(2, hf_config.num_hidden_layers, config.num_kvcache_blocks, self.block_size, num_kv_heads, head_dim)
+        self.kv_cache = torch.empty(
+            2,
+            hf_config.num_hidden_layers,
+            config.num_kvcache_blocks,
+            self.block_size,
+            num_kv_heads,
+            head_dim,
+        )
         layer_id = 0
         for module in self.model.modules():
             if hasattr(module, "k_cache") and hasattr(module, "v_cache"):
@@ -260,8 +336,12 @@ class ModelRunner:
     def prepare_block_tables(self, seqs: list[Sequence]):
         _t0 = debug_start("prepare_block_tables", prefix="tensor.vllm")
         max_len = max(len(seq.block_table) for seq in seqs)
-        block_tables = [seq.block_table + [-1] * (max_len - len(seq.block_table)) for seq in seqs]
-        block_tables = torch.tensor(block_tables, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
+        block_tables = [
+            seq.block_table + [-1] * (max_len - len(seq.block_table)) for seq in seqs
+        ]
+        block_tables = torch.tensor(
+            block_tables, dtype=torch.int32, pin_memory=True
+        ).cuda(non_blocking=True)
         debug_end("prepare_block_tables", _t0, prefix="tensor.vllm")
         return block_tables
 
@@ -277,7 +357,7 @@ class ModelRunner:
         block_tables = None
         for seq in seqs:
             seqlen = len(seq)
-            input_ids.extend(seq[seq.num_cached_tokens:])
+            input_ids.extend(seq[seq.num_cached_tokens :])
             positions.extend(list(range(seq.num_cached_tokens, seqlen)))
             seqlen_q = seqlen - seq.num_cached_tokens
             seqlen_k = seqlen
@@ -285,7 +365,7 @@ class ModelRunner:
             cu_seqlens_k.append(cu_seqlens_k[-1] + seqlen_k)
             max_seqlen_q = max(seqlen_q, max_seqlen_q)
             max_seqlen_k = max(seqlen_k, max_seqlen_k)
-            if not seq.block_table:    # warmup
+            if not seq.block_table:  # warmup
                 continue
             for i in range(seq.num_cached_blocks, seq.num_blocks):
                 start = seq.block_table[i] * self.block_size
@@ -294,14 +374,33 @@ class ModelRunner:
                 else:
                     end = start + seq.last_block_num_tokens
                 slot_mapping.extend(list(range(start, end)))
-        if cu_seqlens_k[-1] > cu_seqlens_q[-1]:    # prefix cache
+        if cu_seqlens_k[-1] > cu_seqlens_q[-1]:  # prefix cache
             block_tables = self.prepare_block_tables(seqs)
-        input_ids = torch.tensor(input_ids, dtype=torch.int64, pin_memory=True).cuda(non_blocking=True)
-        positions = torch.tensor(positions, dtype=torch.int64, pin_memory=True).cuda(non_blocking=True)
-        cu_seqlens_q = torch.tensor(cu_seqlens_q, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
-        cu_seqlens_k = torch.tensor(cu_seqlens_k, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
-        slot_mapping = torch.tensor(slot_mapping, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
-        set_context(True, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, slot_mapping, None, block_tables)
+        input_ids = torch.tensor(input_ids, dtype=torch.int64, pin_memory=True).cuda(
+            non_blocking=True
+        )
+        positions = torch.tensor(positions, dtype=torch.int64, pin_memory=True).cuda(
+            non_blocking=True
+        )
+        cu_seqlens_q = torch.tensor(
+            cu_seqlens_q, dtype=torch.int32, pin_memory=True
+        ).cuda(non_blocking=True)
+        cu_seqlens_k = torch.tensor(
+            cu_seqlens_k, dtype=torch.int32, pin_memory=True
+        ).cuda(non_blocking=True)
+        slot_mapping = torch.tensor(
+            slot_mapping, dtype=torch.int32, pin_memory=True
+        ).cuda(non_blocking=True)
+        set_context(
+            True,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max_seqlen_q,
+            max_seqlen_k,
+            slot_mapping,
+            None,
+            block_tables,
+        )
         debug_end("prepare_prefill", _t0, prefix="tensor.vllm")
         return input_ids, positions
 
@@ -309,21 +408,28 @@ class ModelRunner:
         """Optimized decode preparation using pre-allocated buffers."""
         _t0 = debug_start("prepare_decode", prefix="tensor.vllm")
         bs = len(seqs)
-        
+
         # Use pre-allocated CPU buffers
         for i, seq in enumerate(seqs):
             self._cpu_input_ids[i] = seq.last_token
             self._cpu_positions[i] = len(seq) - 1
             self._cpu_context_lens[i] = len(seq)
-            self._cpu_slot_mapping[i] = seq.block_table[-1] * self.block_size + seq.last_block_num_tokens - 1
-        
+            self._cpu_slot_mapping[i] = (
+                seq.block_table[-1] * self.block_size + seq.last_block_num_tokens - 1
+            )
+
         # Transfer to GPU using sliced views
         input_ids = self._cpu_input_ids[:bs].cuda(non_blocking=True)
         positions = self._cpu_positions[:bs].cuda(non_blocking=True)
         slot_mapping = self._cpu_slot_mapping[:bs].cuda(non_blocking=True)
         context_lens = self._cpu_context_lens[:bs].cuda(non_blocking=True)
         block_tables = self.prepare_block_tables(seqs)
-        set_context(False, slot_mapping=slot_mapping, context_lens=context_lens, block_tables=block_tables)
+        set_context(
+            False,
+            slot_mapping=slot_mapping,
+            context_lens=context_lens,
+            block_tables=block_tables,
+        )
         debug_end("prepare_decode", _t0, prefix="tensor.vllm")
         return input_ids, positions
 
@@ -336,10 +442,11 @@ class ModelRunner:
         else:
             num_seqs = len(seqs)
             target_seqs = seqs
-        
+
         # Fill pre-allocated CPU buffers
         top_ks_is_zero = True
         top_ps_is_one = True
+        min_ps_is_zero = True
         repetition_penalties_is_one = True
         for i, seq in enumerate(target_seqs):
             self._cpu_temperatures[i] = seq.temperature
@@ -350,59 +457,89 @@ class ModelRunner:
             self._cpu_top_ps[i] = seq.top_p if seq.top_p is not None else 1.0
             if seq.top_p is not None and seq.top_p == 1.0:
                 top_ps_is_one = False
-            self._cpu_repetition_penalties[i] = seq.repetition_penalty if seq.repetition_penalty is not None else 1.0
+            self._cpu_min_ps[i] = seq.min_p if seq.min_p is not None else 0.0
+            if seq.min_p is not None and seq.min_p > 0:
+                min_ps_is_zero = False
+            self._cpu_repetition_penalties[i] = (
+                seq.repetition_penalty if seq.repetition_penalty is not None else 1.0
+            )
             if seq.repetition_penalty is not None and seq.repetition_penalty == 1.0:
                 repetition_penalties_is_one = False
-        
+
         # Transfer to GPU using sliced views (single batched transfer)
         temperatures = self._cpu_temperatures[:num_seqs].cuda(non_blocking=True)
         cfg_scales = self._cpu_cfg_scales[:num_seqs].cuda(non_blocking=True)
-        top_ks = self._cpu_top_ks[:num_seqs].cuda(non_blocking=True) if not top_ks_is_zero else None
-        top_ps = self._cpu_top_ps[:num_seqs].cuda(non_blocking=True) if not top_ps_is_one else None
-        repetition_penalties = self._cpu_repetition_penalties[:num_seqs].cuda(non_blocking=True) if not repetition_penalties_is_one else None
-        
+        top_ks = (
+            self._cpu_top_ks[:num_seqs].cuda(non_blocking=True)
+            if not top_ks_is_zero
+            else None
+        )
+        top_ps = (
+            self._cpu_top_ps[:num_seqs].cuda(non_blocking=True)
+            if not top_ps_is_one
+            else None
+        )
+        min_ps = (
+            self._cpu_min_ps[:num_seqs].cuda(non_blocking=True)
+            if not min_ps_is_zero
+            else None
+        )
+        repetition_penalties = (
+            self._cpu_repetition_penalties[:num_seqs].cuda(non_blocking=True)
+            if not repetition_penalties_is_one
+            else None
+        )
+
         debug_end("prepare_sample", _t0, prefix="tensor.vllm")
-        return temperatures, cfg_scales, top_ks, top_ps, repetition_penalties
+        return temperatures, cfg_scales, top_ks, top_ps, min_ps, repetition_penalties
 
     @torch.inference_mode()
-    def run_model(self, input_ids: torch.Tensor, positions: torch.Tensor, is_prefill: bool):
+    def run_model(
+        self, input_ids: torch.Tensor, positions: torch.Tensor, is_prefill: bool
+    ):
         _t0 = debug_start("run_model", prefix="tensor.vllm")
         if is_prefill or self.enforce_eager or input_ids.size(0) > 512:
-            _debug_log(f"run_model: eager mode, is_prefill={is_prefill}, bs={input_ids.size(0)}")
+            _debug_log(
+                f"run_model: eager mode, is_prefill={is_prefill}, bs={input_ids.size(0)}"
+            )
             out = self.model.compute_logits(self.model(input_ids, positions))
             debug_end("run_model", _t0, prefix="tensor.vllm")
             return out
         else:
             bs = input_ids.size(0)
             context = get_context()
-            
+
             _debug_log(f"run_model: decode mode, bs={bs}")
             _debug_log(f"  context.block_tables.shape={context.block_tables.shape}")
             _debug_log(f"  context.slot_mapping.shape={context.slot_mapping.shape}")
             _debug_log(f"  context.context_lens.shape={context.context_lens.shape}")
             _debug_log(f"  context.slot_mapping={context.slot_mapping.tolist()}")
             _debug_log(f"  context.context_lens={context.context_lens.tolist()}")
-            
+
             # Check if block_tables size exceeds pre-allocated buffer size
             # This can happen when conditional and unconditional sequences have different lengths
             # in CFG mode, causing block_tables to have more columns than expected
             max_num_blocks = self.graph_vars["block_tables"].size(1)
             if context.block_tables.size(1) > max_num_blocks:
                 # Fall back to eager mode when block_tables is too large for CUDA graph
-                _debug_log(f"  fallback: block_tables cols {context.block_tables.size(1)} > max {max_num_blocks}")
+                _debug_log(
+                    f"  fallback: block_tables cols {context.block_tables.size(1)} > max {max_num_blocks}"
+                )
                 out = self.model.compute_logits(self.model(input_ids, positions))
                 debug_end("run_model", _t0, prefix="tensor.vllm")
                 return out
-            
+
             # Fix: Also check if block_tables row count matches batch size
             # Dimension mismatch can cause CUDA illegal memory access during graph replay
             if context.block_tables.size(0) != bs:
                 # Fall back to eager mode when block_tables row count doesn't match batch size
-                _debug_log(f"  fallback: block_tables rows {context.block_tables.size(0)} != bs {bs}")
+                _debug_log(
+                    f"  fallback: block_tables rows {context.block_tables.size(0)} != bs {bs}"
+                )
                 out = self.model.compute_logits(self.model(input_ids, positions))
                 debug_end("run_model", _t0, prefix="tensor.vllm")
                 return out
-            
+
             # Fix: Verify slot_mapping and context_lens dimensions match batch size
             if context.slot_mapping.size(0) != bs or context.context_lens.size(0) != bs:
                 # Fall back to eager mode when dimensions don't match
@@ -410,16 +547,22 @@ class ModelRunner:
                 out = self.model.compute_logits(self.model(input_ids, positions))
                 debug_end("run_model", _t0, prefix="tensor.vllm")
                 return out
-            
+
             # Validate block_tables values
             if _DEBUG:
                 max_block_id = context.block_tables.max().item()
-                min_block_id = context.block_tables[context.block_tables >= 0].min().item() if (context.block_tables >= 0).any() else -1
+                min_block_id = (
+                    context.block_tables[context.block_tables >= 0].min().item()
+                    if (context.block_tables >= 0).any()
+                    else -1
+                )
                 _debug_log(f"  block_tables range: [{min_block_id}, {max_block_id}]")
                 _debug_log(f"  num_kvcache_blocks: {self.config.num_kvcache_blocks}")
                 if max_block_id >= self.config.num_kvcache_blocks:
-                    _debug_log(f"  WARNING: block_table contains invalid block_id {max_block_id} >= {self.config.num_kvcache_blocks}")
-            
+                    _debug_log(
+                        f"  WARNING: block_table contains invalid block_id {max_block_id} >= {self.config.num_kvcache_blocks}"
+                    )
+
             graph = self.graphs[next(x for x in self.graph_bs if x >= bs)]
             graph_vars = self.graph_vars
             graph_vars["input_ids"][:bs] = input_ids
@@ -430,8 +573,10 @@ class ModelRunner:
             graph_vars["context_lens"][:bs] = context.context_lens
             # Clear block_tables first to ensure no stale data from previous runs
             graph_vars["block_tables"][:bs].fill_(-1)
-            graph_vars["block_tables"][:bs, :context.block_tables.size(1)] = context.block_tables
-            
+            graph_vars["block_tables"][:bs, : context.block_tables.size(1)] = (
+                context.block_tables
+            )
+
             _debug_log(f"  executing CUDA graph replay for bs={bs}")
             graph.replay()
             out = self.model.compute_logits(graph_vars["outputs"][:bs])
@@ -444,10 +589,12 @@ class ModelRunner:
         where uncond_seqi is the paired unconditional sequence of cond_seqi."""
         _debug_log(f"run: num_seqs={len(seqs)}, is_prefill={is_prefill}")
         for i, seq in enumerate(seqs):
-            _debug_log(f"  seq[{i}]: len={len(seq)}, num_blocks={seq.num_blocks}, "
-                      f"cfg_scale={seq.cfg_scale}, is_uncond={seq.is_unconditional}, "
-                      f"block_table={seq.block_table}")
-        
+            _debug_log(
+                f"  seq[{i}]: len={len(seq)}, num_blocks={seq.num_blocks}, "
+                f"cfg_scale={seq.cfg_scale}, is_uncond={seq.is_unconditional}, "
+                f"block_table={seq.block_table}"
+            )
+
         # Check if this is a CFG batch (contains paired conditional and unconditional sequences)
         is_cfg_batch = seqs[0].cfg_scale > 1.0 and seqs[0].paired_seq is not None
         _debug_log(f"  is_cfg_batch={is_cfg_batch}")
@@ -456,93 +603,135 @@ class ModelRunner:
             num_cond = len(seqs) // 2
             cond_seqs = seqs[:num_cond]
             # uncond_seqs = seqs[num_cond:]
-            
+
             # Prepare inputs for both conditional and unconditional (they're already in the batch)
-            input_ids, positions = (self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs))
-            sample_params = self.prepare_sample(seqs, is_cfg_batch=True) if self.rank == 0 else None
+            input_ids, positions = (
+                self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs)
+            )
+            sample_params = (
+                self.prepare_sample(seqs, is_cfg_batch=True) if self.rank == 0 else None
+            )
             if sample_params is not None:
-                temperatures, cfg_scales, top_ks, top_ps, repetition_penalties = sample_params
+                (
+                    temperatures,
+                    cfg_scales,
+                    top_ks,
+                    top_ps,
+                    min_ps,
+                    repetition_penalties,
+                ) = sample_params
             else:
-                temperatures = cfg_scales = top_ks = top_ps = repetition_penalties = None
-            
+                temperatures = cfg_scales = top_ks = top_ps = min_ps = (
+                    repetition_penalties
+                ) = None
+
             # Run model forward (processes entire batch: cond + uncond)
             logits_all = self.run_model(input_ids, positions, is_prefill)
             reset_context()
-            
+
             if self.rank == 0:
                 # Split logits: first half is conditional, second half is unconditional
                 logits_cond = logits_all[:num_cond]
                 logits_uncond = logits_all[num_cond:]
-                
+
                 # Apply repetition penalty to conditional logits (before CFG)
                 if repetition_penalties is not None:
                     for i, seq in enumerate(cond_seqs):
                         penalty = repetition_penalties[i].item()
                         if penalty != 1.0:
                             # Only penalize completion tokens (not prompt tokens)
-                            completion_tokens = torch.tensor(seq.completion_token_ids, device=logits_cond.device)
+                            completion_tokens = torch.tensor(
+                                seq.completion_token_ids, device=logits_cond.device
+                            )
                             if len(completion_tokens) > 0:
                                 # Create token mask: mark tokens that appeared in completion
-                                token_mask = torch.zeros(logits_cond.shape[1], dtype=torch.bool, device=logits_cond.device)
+                                token_mask = torch.zeros(
+                                    logits_cond.shape[1],
+                                    dtype=torch.bool,
+                                    device=logits_cond.device,
+                                )
                                 token_mask[completion_tokens] = True
-                                
+
                                 # Apply standard repetition penalty formula (matching transformers implementation):
                                 # For tokens in completion: if score < 0 then score * penalty, else score / penalty
                                 penalty_scores = torch.where(
                                     logits_cond[i] < 0,
                                     logits_cond[i] * penalty,
-                                    logits_cond[i] / penalty
+                                    logits_cond[i] / penalty,
                                 )
                                 # Only apply penalty to tokens that appeared in completion
-                                logits_cond[i] = torch.where(token_mask, penalty_scores, logits_cond[i])
-                
+                                logits_cond[i] = torch.where(
+                                    token_mask, penalty_scores, logits_cond[i]
+                                )
+
                 # Apply CFG formula: logits_cfg = logits_uncond + cfg_scale * (logits_cond - logits_uncond)
                 cfg_scales_tensor = cfg_scales.unsqueeze(1)  # [num_cond, 1]
-                logits_cfg = logits_uncond + cfg_scales_tensor * (logits_cond - logits_uncond)
-                
+                logits_cfg = logits_uncond + cfg_scales_tensor * (
+                    logits_cond - logits_uncond
+                )
+
                 # Apply logits processor for constrained decoding (if any sequence has one)
                 for i, seq in enumerate(cond_seqs):
                     if seq.logits_processor is not None:
                         # Create input_ids tensor for this sequence
-                        seq_input_ids = torch.tensor([seq.token_ids], device=logits_cfg.device)
+                        seq_input_ids = torch.tensor(
+                            [seq.token_ids], device=logits_cfg.device
+                        )
                         # Apply processor to this sequence's logits
-                        logits_cfg[i:i+1] = seq.logits_processor(seq_input_ids, logits_cfg[i:i+1])
-                
+                        logits_cfg[i : i + 1] = seq.logits_processor(
+                            seq_input_ids, logits_cfg[i : i + 1]
+                        )
+
                 # Prepare input_ids for sampler (for repetition penalty, though we already applied it)
                 # cond_input_ids = torch.tensor([seq.token_ids for seq in cond_seqs], device=logits_cfg.device)
-                
+
                 # Sample from CFG logits
                 token_ids_cfg = self.sampler(
-                    logits_cfg, 
+                    logits_cfg,
                     temperatures,
                     top_ks=top_ks if top_ks is not None else None,
                     top_ps=top_ps if top_ps is not None else None,
+                    min_ps=min_ps if min_ps is not None else None,
                     repetition_penalties=None,  # Already applied above
                     # input_ids=cond_input_ids,
                 ).tolist()
-                
+
                 # Update logits processor state after sampling
                 # NOTE: Only update for the first sequence since all sequences share the same processor
                 # Updating multiple times would cause duplicate state updates (e.g., codes_count += N instead of += 1)
                 if cond_seqs and cond_seqs[0].logits_processor_update_state is not None:
                     cond_seqs[0].logits_processor_update_state(token_ids_cfg[0])
-                
+
                 # Return token_ids (will be applied to both conditional and unconditional sequences)
                 return token_ids_cfg
             else:
                 return None
         else:
             # Normal batch (non-CFG)
-            input_ids, positions = (self.prepare_prefill(seqs) if is_prefill 
-                                   else self.prepare_decode(seqs))
-            sample_params = self.prepare_sample(seqs, is_cfg_batch=False) if self.rank == 0 else None
+            input_ids, positions = (
+                self.prepare_prefill(seqs) if is_prefill else self.prepare_decode(seqs)
+            )
+            sample_params = (
+                self.prepare_sample(seqs, is_cfg_batch=False)
+                if self.rank == 0
+                else None
+            )
             if sample_params is not None:
-                temperatures, cfg_scales, top_ks, top_ps, repetition_penalties = sample_params
+                (
+                    temperatures,
+                    cfg_scales,
+                    top_ks,
+                    top_ps,
+                    min_ps,
+                    repetition_penalties,
+                ) = sample_params
             else:
-                temperatures = cfg_scales = top_ks = top_ps = repetition_penalties = None
+                temperatures = cfg_scales = top_ks = top_ps = min_ps = (
+                    repetition_penalties
+                ) = None
             logits = self.run_model(input_ids, positions, is_prefill)
             reset_context()
-            
+
             if self.rank == 0:
                 # Apply repetition penalty to logits
                 if repetition_penalties is not None:
@@ -550,52 +739,65 @@ class ModelRunner:
                         penalty = repetition_penalties[i].item()
                         if penalty != 1.0:
                             # Only penalize completion tokens (not prompt tokens)
-                            completion_tokens = torch.tensor(seq.completion_token_ids, device=logits.device)
+                            completion_tokens = torch.tensor(
+                                seq.completion_token_ids, device=logits.device
+                            )
                             if len(completion_tokens) > 0:
                                 # Create token mask: mark tokens that appeared in completion
-                                token_mask = torch.zeros(logits.shape[1], dtype=torch.bool, device=logits.device)
+                                token_mask = torch.zeros(
+                                    logits.shape[1],
+                                    dtype=torch.bool,
+                                    device=logits.device,
+                                )
                                 token_mask[completion_tokens] = True
-                                
+
                                 # Apply standard repetition penalty formula (matching transformers implementation):
                                 # For tokens in completion: if score < 0 then score * penalty, else score / penalty
                                 penalty_scores = torch.where(
                                     logits[i] < 0,
                                     logits[i] * penalty,
-                                    logits[i] / penalty
+                                    logits[i] / penalty,
                                 )
                                 # Only apply penalty to tokens that appeared in completion
-                                logits[i] = torch.where(token_mask, penalty_scores, logits[i])
-                
+                                logits[i] = torch.where(
+                                    token_mask, penalty_scores, logits[i]
+                                )
+
                 # Apply logits processor for constrained decoding (if any sequence has one)
                 # Clone logits to avoid in-place update issues in inference mode
                 logits = logits.clone()
                 for i, seq in enumerate(seqs):
                     if seq.logits_processor is not None:
                         # Create input_ids tensor for this sequence
-                        seq_input_ids = torch.tensor([seq.token_ids], device=logits.device)
+                        seq_input_ids = torch.tensor(
+                            [seq.token_ids], device=logits.device
+                        )
                         # Apply processor to this sequence's logits (clone to avoid inference mode issues)
-                        processed = seq.logits_processor(seq_input_ids, logits[i:i+1].clone())
+                        processed = seq.logits_processor(
+                            seq_input_ids, logits[i : i + 1].clone()
+                        )
                         logits[i] = processed[0]
-                
+
                 # Prepare input_ids for sampler
                 # seq_input_ids = torch.tensor([seq.token_ids for seq in seqs], device=logits.device)
-                
+
                 token_ids = self.sampler(
-                    logits, 
+                    logits,
                     temperatures,
                     top_ks=top_ks if top_ks is not None else None,
                     top_ps=top_ps if top_ps is not None else None,
+                    min_ps=min_ps if min_ps is not None else None,
                     repetition_penalties=None,  # Already applied above
                     # input_ids=seq_input_ids,
                 ).tolist()
-                
+
                 # Update logits processor state after sampling
                 # NOTE: Only update for the first sequence since all sequences may share the same processor
                 # (when using a single SamplingParams for batch generation)
                 # Updating multiple times would cause duplicate state updates (e.g., codes_count += N instead of += 1)
                 if seqs and seqs[0].logits_processor_update_state is not None:
                     seqs[0].logits_processor_update_state(token_ids[0])
-                
+
                 return token_ids
             else:
                 return None
@@ -619,10 +821,15 @@ class ModelRunner:
 
         for bs in reversed(self.graph_bs):
             graph = torch.cuda.CUDAGraph()
-            set_context(False, slot_mapping=slot_mapping[:bs], context_lens=context_lens[:bs], block_tables=block_tables[:bs])
-            outputs[:bs] = self.model(input_ids[:bs], positions[:bs])    # warmup
+            set_context(
+                False,
+                slot_mapping=slot_mapping[:bs],
+                context_lens=context_lens[:bs],
+                block_tables=block_tables[:bs],
+            )
+            outputs[:bs] = self.model(input_ids[:bs], positions[:bs])  # warmup
             with torch.cuda.graph(graph, self.graph_pool):
-                outputs[:bs] = self.model(input_ids[:bs], positions[:bs])    # capture
+                outputs[:bs] = self.model(input_ids[:bs], positions[:bs])  # capture
             if self.graph_pool is None:
                 self.graph_pool = graph.pool()
             self.graphs[bs] = graph

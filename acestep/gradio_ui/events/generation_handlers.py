@@ -100,7 +100,7 @@ def load_metadata(file_obj, llm_handler=None):
     """
     if file_obj is None:
         gr.Warning(t("messages.no_file_selected"))
-        return [None] * 36 + [False]  # Return None for all fields, False for is_format_caption
+        return [None] * 37 + [False]  # Return None for all fields, False for is_format_caption
     
     try:
         # Read the uploaded file
@@ -161,6 +161,7 @@ def load_metadata(file_obj, llm_handler=None):
         lm_cfg_scale = metadata.get('lm_cfg_scale', 2.0)
         lm_top_k = metadata.get('lm_top_k', 0)
         lm_top_p = metadata.get('lm_top_p', 0.9)
+        lm_min_p = metadata.get('lm_min_p', 0.0)
         lm_negative_prompt = metadata.get('lm_negative_prompt', 'NO USER INPUT')
         use_cot_metas = metadata.get('use_cot_metas', True)  # Added: read use_cot_metas
         use_cot_caption = metadata.get('use_cot_caption', True)
@@ -186,7 +187,7 @@ def load_metadata(file_obj, llm_handler=None):
             audio_duration, batch_size, inference_steps, guidance_scale, seed, random_seed,
             use_adg, cfg_interval_start, cfg_interval_end, shift, infer_method,
             custom_timesteps,  # Added: custom_timesteps (between infer_method and audio_format)
-            audio_format, lm_temperature, lm_cfg_scale, lm_top_k, lm_top_p, lm_negative_prompt,
+            audio_format, lm_temperature, lm_cfg_scale, lm_top_k, lm_top_p, lm_min_p, lm_negative_prompt,
             use_cot_metas, use_cot_caption, use_cot_language, audio_cover_strength,
             think, audio_codes, repainting_start, repainting_end,
             track_name, complete_track_classes, instrumental,
@@ -195,10 +196,10 @@ def load_metadata(file_obj, llm_handler=None):
         
     except json.JSONDecodeError as e:
         gr.Warning(t("messages.invalid_json", error=str(e)))
-        return [None] * 36 + [False]
+        return [None] * 37 + [False]
     except Exception as e:
         gr.Warning(t("messages.load_error", error=str(e)))
-        return [None] * 36 + [False]
+        return [None] * 37 + [False]
 
 
 def load_random_example(task_type: str, llm_handler=None):
@@ -615,7 +616,7 @@ def update_instruction_ui(
     )
 
 
-def transcribe_audio_codes(llm_handler, audio_code_string, constrained_decoding_debug):
+def transcribe_audio_codes(llm_handler, audio_code_string, lm_min_p, constrained_decoding_debug):
     """
     Transcribe audio codes to metadata using LLM understanding.
     If audio_code_string is empty, generate a sample example instead.
@@ -625,6 +626,7 @@ def transcribe_audio_codes(llm_handler, audio_code_string, constrained_decoding_
     Args:
         llm_handler: LLM handler instance
         audio_code_string: String containing audio codes (or empty for example generation)
+        lm_min_p: LLM min-p sampling
         constrained_decoding_debug: Whether to enable debug logging for constrained decoding
         
     Returns:
@@ -634,6 +636,7 @@ def transcribe_audio_codes(llm_handler, audio_code_string, constrained_decoding_
     result = understand_music(
         llm_handler=llm_handler,
         audio_codes=audio_code_string,
+        min_p=lm_min_p,
         use_constrained_decoding=True,
         constrained_decoding_debug=constrained_decoding_debug,
     )
@@ -802,6 +805,7 @@ def handle_create_sample(
     lm_temperature: float,
     lm_top_k: int,
     lm_top_p: float,
+    lm_min_p: float,
     constrained_decoding_debug: bool = False,
 ):
     """
@@ -820,6 +824,7 @@ def handle_create_sample(
         lm_temperature: LLM temperature for generation
         lm_top_k: LLM top-k sampling
         lm_top_p: LLM top-p sampling
+        lm_min_p: LLM min-p sampling
         constrained_decoding_debug: Whether to enable debug logging
         
     Returns:
@@ -866,6 +871,7 @@ def handle_create_sample(
     # Convert LM parameters
     top_k_value = None if not lm_top_k or lm_top_k == 0 else int(lm_top_k)
     top_p_value = None if not lm_top_p or lm_top_p >= 1.0 else lm_top_p
+    min_p_value = None if not lm_min_p or lm_min_p <= 0.0 else lm_min_p
     
     # Call create_sample API
     # Note: cfg_scale and negative_prompt are not supported in create_sample mode
@@ -877,6 +883,7 @@ def handle_create_sample(
         temperature=lm_temperature,
         top_k=top_k_value,
         top_p=top_p_value,
+        min_p=min_p_value,
         use_constrained_decoding=True,
         constrained_decoding_debug=constrained_decoding_debug,
     )
@@ -941,6 +948,7 @@ def handle_format_sample(
     lm_temperature: float,
     lm_top_k: int,
     lm_top_p: float,
+    lm_min_p: float,
     constrained_decoding_debug: bool = False,
 ):
     """
@@ -962,6 +970,7 @@ def handle_format_sample(
         lm_temperature: LLM temperature for generation
         lm_top_k: LLM top-k sampling
         lm_top_p: LLM top-p sampling
+        lm_min_p: LLM min-p sampling
         constrained_decoding_debug: Whether to enable debug logging
         
     Returns:
@@ -1008,6 +1017,7 @@ def handle_format_sample(
     # Convert LM parameters
     top_k_value = None if not lm_top_k or lm_top_k == 0 else int(lm_top_k)
     top_p_value = None if not lm_top_p or lm_top_p >= 1.0 else lm_top_p
+    min_p_value = None if not lm_min_p or lm_min_p <= 0.0 else lm_min_p
     
     # Call format_sample API
     result = format_sample(
@@ -1018,6 +1028,7 @@ def handle_format_sample(
         temperature=lm_temperature,
         top_k=top_k_value,
         top_p=top_p_value,
+        min_p=min_p_value,
         use_constrained_decoding=True,
         constrained_decoding_debug=constrained_decoding_debug,
     )

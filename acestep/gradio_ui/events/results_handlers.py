@@ -486,7 +486,7 @@ def generate_with_progress(
     text2music_audio_code_string, repainting_start, repainting_end,
     instruction_display_gen, audio_cover_strength, task_type,
     use_adg, cfg_interval_start, cfg_interval_end, shift, infer_method, custom_timesteps, audio_format, lm_temperature,
-    think_checkbox, lm_cfg_scale, lm_top_k, lm_top_p, lm_negative_prompt,
+    think_checkbox, lm_cfg_scale, lm_top_k, lm_top_p, lm_min_p, lm_negative_prompt,
     use_cot_metas, use_cot_caption, use_cot_language, is_format_caption,
     constrained_decoding_debug,
     allow_lm_batch,
@@ -571,6 +571,7 @@ def generate_with_progress(
         lm_cfg_scale=lm_cfg_scale,
         lm_top_k=lm_top_k,
         lm_top_p=lm_top_p,
+        lm_min_p=lm_min_p,
         lm_negative_prompt=lm_negative_prompt,
         use_cot_metas=actual_use_cot_metas,
         use_cot_caption=use_cot_caption,
@@ -1416,7 +1417,7 @@ def capture_current_params(
     text2music_audio_code_string, repainting_start, repainting_end,
     instruction_display_gen, audio_cover_strength, task_type,
     use_adg, cfg_interval_start, cfg_interval_end, shift, infer_method, custom_timesteps, audio_format, lm_temperature,
-    think_checkbox, lm_cfg_scale, lm_top_k, lm_top_p, lm_negative_prompt,
+    think_checkbox, lm_cfg_scale, lm_top_k, lm_top_p, lm_min_p, lm_negative_prompt,
     use_cot_metas, use_cot_caption, use_cot_language,
     constrained_decoding_debug, allow_lm_batch, auto_score, auto_lrc, score_scale, lm_batch_chunk_size,
     track_name, complete_track_classes
@@ -1460,6 +1461,7 @@ def capture_current_params(
         "lm_cfg_scale": lm_cfg_scale,
         "lm_top_k": lm_top_k,
         "lm_top_p": lm_top_p,
+        "lm_min_p": lm_min_p,
         "lm_negative_prompt": lm_negative_prompt,
         "use_cot_metas": use_cot_metas,
         "use_cot_caption": use_cot_caption,
@@ -1483,7 +1485,7 @@ def generate_with_batch_management(
     text2music_audio_code_string, repainting_start, repainting_end,
     instruction_display_gen, audio_cover_strength, task_type,
     use_adg, cfg_interval_start, cfg_interval_end, shift, infer_method, custom_timesteps, audio_format, lm_temperature,
-    think_checkbox, lm_cfg_scale, lm_top_k, lm_top_p, lm_negative_prompt,
+    think_checkbox, lm_cfg_scale, lm_top_k, lm_top_p, lm_min_p, lm_negative_prompt,
     use_cot_metas, use_cot_caption, use_cot_language, is_format_caption,
     constrained_decoding_debug,
     allow_lm_batch,
@@ -1512,7 +1514,7 @@ def generate_with_batch_management(
         text2music_audio_code_string, repainting_start, repainting_end,
         instruction_display_gen, audio_cover_strength, task_type,
         use_adg, cfg_interval_start, cfg_interval_end, shift, infer_method, custom_timesteps, audio_format, lm_temperature,
-        think_checkbox, lm_cfg_scale, lm_top_k, lm_top_p, lm_negative_prompt,
+        think_checkbox, lm_cfg_scale, lm_top_k, lm_top_p, lm_min_p, lm_negative_prompt,
         use_cot_metas, use_cot_caption, use_cot_language, is_format_caption,
         constrained_decoding_debug,
         allow_lm_batch,
@@ -1597,6 +1599,7 @@ def generate_with_batch_management(
         "lm_cfg_scale": lm_cfg_scale,
         "lm_top_k": lm_top_k,
         "lm_top_p": lm_top_p,
+        "lm_min_p": lm_min_p,
         "lm_negative_prompt": lm_negative_prompt,
         "use_cot_metas": use_cot_metas,
         "use_cot_caption": use_cot_caption,
@@ -1778,6 +1781,7 @@ def generate_next_batch_background(
         params.setdefault("lm_cfg_scale", 2.0)
         params.setdefault("lm_top_k", 0)
         params.setdefault("lm_top_p", 0.9)
+        params.setdefault("lm_min_p", 0.0)
         params.setdefault("lm_negative_prompt", "NO USER INPUT")
         params.setdefault("use_cot_metas", True)
         params.setdefault("use_cot_caption", True)
@@ -1830,6 +1834,7 @@ def generate_next_batch_background(
             lm_cfg_scale=params.get("lm_cfg_scale"),
             lm_top_k=params.get("lm_top_k"),
             lm_top_p=params.get("lm_top_p"),
+            lm_min_p=params.get("lm_min_p"),
             lm_negative_prompt=params.get("lm_negative_prompt"),
             use_cot_metas=params.get("use_cot_metas"),
             use_cot_caption=params.get("use_cot_caption"),
@@ -2225,7 +2230,7 @@ def restore_batch_parameters(current_batch_index, batch_queue):
     """
     if current_batch_index not in batch_queue:
         gr.Warning(t("messages.no_batch_data"))
-        return [gr.update()] * 20  # Updated count: 1 codes + 19 other params
+        return [gr.update()] * 21  # Updated count: 1 codes + 20 other params
     
     batch_data = batch_queue[current_batch_index]
     params = batch_data.get("generation_params", {})
@@ -2244,6 +2249,7 @@ def restore_batch_parameters(current_batch_index, batch_queue):
     lm_cfg_scale = params.get("lm_cfg_scale", 2.0)
     lm_top_k = params.get("lm_top_k", 0)
     lm_top_p = params.get("lm_top_p", 0.9)
+    lm_min_p = params.get("lm_min_p", 0.0)
     think_checkbox = params.get("think_checkbox", True)
     use_cot_caption = params.get("use_cot_caption", True)
     use_cot_language = params.get("use_cot_language", True)
@@ -2268,7 +2274,7 @@ def restore_batch_parameters(current_batch_index, batch_queue):
     return (
         codes_main, captions, lyrics, bpm, key_scale, time_signature,
         vocal_language, audio_duration, batch_size_input, inference_steps,
-        lm_temperature, lm_cfg_scale, lm_top_k, lm_top_p, think_checkbox,
+        lm_temperature, lm_cfg_scale, lm_top_k, lm_top_p, lm_min_p, think_checkbox,
         use_cot_caption, use_cot_language, allow_lm_batch,
         track_name, complete_track_classes
     )

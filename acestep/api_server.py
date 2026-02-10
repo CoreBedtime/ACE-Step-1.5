@@ -495,7 +495,7 @@ class GenerateMusicRequest(BaseModel):
     use_adg: bool = False
     cfg_interval_start: float = 0.0
     cfg_interval_end: float = 1.0
-    infer_method: str = "ode"  # "ode" or "sde" - diffusion inference method
+    infer_method: str = "ode"  # "ode", "sde", or "jkass_quality" - diffusion inference method
     shift: float = Field(
         default=3.0,
         description="Timestep shift factor (range 1.0~5.0, default 3.0). Only effective for base models, not turbo models."
@@ -523,6 +523,7 @@ class GenerateMusicRequest(BaseModel):
     lm_cfg_scale: float = 2.5
     lm_top_k: Optional[int] = None
     lm_top_p: Optional[float] = 0.9
+    lm_min_p: Optional[float] = 0.0
     lm_repetition_penalty: float = 1.0
     lm_negative_prompt: str = "NO USER INPUT"
 
@@ -1335,6 +1336,7 @@ def create_app() -> FastAPI:
                 # Normalize LM sampling parameters
                 lm_top_k = req.lm_top_k if req.lm_top_k and req.lm_top_k > 0 else 0
                 lm_top_p = req.lm_top_p if req.lm_top_p and req.lm_top_p < 1.0 else 0.9
+                lm_min_p = req.lm_min_p if req.lm_min_p and req.lm_min_p > 0.0 else 0.0
 
                 # Determine if LLM is needed
                 thinking = bool(req.thinking)
@@ -1421,6 +1423,7 @@ def create_app() -> FastAPI:
                         temperature=req.lm_temperature,
                         top_k=lm_top_k if lm_top_k > 0 else None,
                         top_p=lm_top_p if lm_top_p < 1.0 else None,
+                        min_p=lm_min_p if lm_min_p > 0.0 else None,
                         use_constrained_decoding=True,
                     )
 
@@ -1464,6 +1467,7 @@ def create_app() -> FastAPI:
                         temperature=req.lm_temperature,
                         top_k=lm_top_k if lm_top_k > 0 else None,
                         top_p=lm_top_p if lm_top_p < 1.0 else None,
+                        min_p=lm_min_p if lm_min_p > 0.0 else None,
                         use_constrained_decoding=True,
                     )
                     
@@ -1590,6 +1594,7 @@ def create_app() -> FastAPI:
                     metadata_dict, status_string = llm_to_pass.understand_audio_from_codes(
                         audio_codes=audio_codes,
                         temperature=0.3,
+                        min_p=lm_min_p if lm_min_p > 0.0 else None,
                         use_constrained_decoding=True,
                         constrained_decoding_debug=config.constrained_decoding_debug
                     )
@@ -1618,6 +1623,7 @@ def create_app() -> FastAPI:
                         infer_type="dit",
                         temperature=req.lm_temperature,
                         top_p=req.lm_top_p,
+                        min_p=req.lm_min_p,
                         use_cot_metas=True,
                         use_cot_caption=req.use_cot_caption,
                         use_cot_language=req.use_cot_language,

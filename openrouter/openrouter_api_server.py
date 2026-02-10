@@ -120,6 +120,7 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False  # Enable streaming response
     temperature: float = 0.85
     top_p: float = 0.9
+    min_p: float = 0.0
     max_tokens: Optional[int] = None
     seed: Optional[Union[int, str]] = Field(default=None, description="Seed(s) for reproducibility. Comma-separated for batch (e.g. '42,123,456')")
     # ACE-Step specific parameters

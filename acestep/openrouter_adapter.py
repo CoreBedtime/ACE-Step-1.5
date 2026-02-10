@@ -385,6 +385,7 @@ def _to_generate_music_request(
         # LM parameters
         lm_temperature=req.temperature if req.temperature is not None else 0.85,
         lm_top_p=req.top_p if req.top_p is not None else 0.9,
+        lm_min_p=req.min_p if req.min_p is not None else 0.0,
         lm_top_k=req.top_k if req.top_k is not None else 0,
         thinking=req.thinking if req.thinking is not None else False,
 

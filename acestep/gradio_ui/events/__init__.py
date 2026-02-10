@@ -202,9 +202,10 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
     )
     
     generation_section["transcribe_btn"].click(
-        fn=lambda codes, debug: gen_h.transcribe_audio_codes(llm_handler, codes, debug),
+        fn=lambda codes, min_p, debug: gen_h.transcribe_audio_codes(llm_handler, codes, min_p, debug),
         inputs=[
             generation_section["text2music_audio_code_string"],
+            generation_section["lm_min_p"],
             generation_section["constrained_decoding_debug"]
         ],
         outputs=[
@@ -248,8 +249,8 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
     # ========== Format Button ==========
     # Note: cfg_scale and negative_prompt are not supported in format mode
     generation_section["format_btn"].click(
-        fn=lambda caption, lyrics, bpm, duration, key_scale, time_sig, temp, top_k, top_p, debug: gen_h.handle_format_sample(
-            llm_handler, caption, lyrics, bpm, duration, key_scale, time_sig, temp, top_k, top_p, debug
+        fn=lambda caption, lyrics, bpm, duration, key_scale, time_sig, temp, top_k, top_p, min_p, debug: gen_h.handle_format_sample(
+            llm_handler, caption, lyrics, bpm, duration, key_scale, time_sig, temp, top_k, top_p, min_p, debug
         ),
         inputs=[
             generation_section["captions"],
@@ -261,6 +262,7 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
             generation_section["lm_temperature"],
             generation_section["lm_top_k"],
             generation_section["lm_top_p"],
+            generation_section["lm_min_p"],
             generation_section["constrained_decoding_debug"],
         ],
         outputs=[
@@ -312,8 +314,8 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
     # ========== Create Sample Button (Simple Mode) ==========
     # Note: cfg_scale and negative_prompt are not supported in create_sample mode
     generation_section["create_sample_btn"].click(
-        fn=lambda query, instrumental, vocal_lang, temp, top_k, top_p, debug: gen_h.handle_create_sample(
-            llm_handler, query, instrumental, vocal_lang, temp, top_k, top_p, debug
+        fn=lambda query, instrumental, vocal_lang, temp, top_k, top_p, min_p, debug: gen_h.handle_create_sample(
+            llm_handler, query, instrumental, vocal_lang, temp, top_k, top_p, min_p, debug
         ),
         inputs=[
             generation_section["simple_query_input"],
@@ -322,6 +324,7 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
             generation_section["lm_temperature"],
             generation_section["lm_top_k"],
             generation_section["lm_top_p"],
+            generation_section["lm_min_p"],
             generation_section["constrained_decoding_debug"],
         ],
         outputs=[
@@ -373,6 +376,7 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
             generation_section["lm_cfg_scale"],
             generation_section["lm_top_k"],
             generation_section["lm_top_p"],
+            generation_section["lm_min_p"],
             generation_section["lm_negative_prompt"],
             generation_section["use_cot_metas"],  # Added: use_cot_metas
             generation_section["use_cot_caption"],
@@ -586,6 +590,7 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
             generation_section["lm_cfg_scale"],
             generation_section["lm_top_k"],
             generation_section["lm_top_p"],
+            generation_section["lm_min_p"],
             generation_section["lm_negative_prompt"],
             generation_section["use_cot_metas"],
             generation_section["use_cot_caption"],
@@ -774,6 +779,7 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
             generation_section["lm_cfg_scale"],
             generation_section["lm_top_k"],
             generation_section["lm_top_p"],
+            generation_section["lm_min_p"],
             generation_section["lm_negative_prompt"],
             generation_section["use_cot_metas"],
             generation_section["use_cot_caption"],
@@ -887,6 +893,7 @@ def setup_event_handlers(demo, dit_handler, llm_handler, dataset_handler, datase
             generation_section["lm_cfg_scale"],
             generation_section["lm_top_k"],
             generation_section["lm_top_p"],
+            generation_section["lm_min_p"],
             generation_section["think_checkbox"],
             generation_section["use_cot_caption"],
             generation_section["use_cot_language"],
