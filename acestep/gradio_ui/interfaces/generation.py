@@ -510,6 +510,15 @@ def create_generation_section(dit_handler, llm_handler, init_params=None, langua
                     info=t("generation.guidance_scale_info"),
                     visible=False
                 )
+                guidance_rescale = gr.Slider(
+                    minimum=0.0,
+                    maximum=1.0,
+                    value=0.0,
+                    step=0.01,
+                    label=t("generation.guidance_rescale_label"),
+                    info=t("generation.guidance_rescale_info"),
+                    visible=False
+                )
                 with gr.Column():
                     seed = gr.Textbox(
                         label=t("generation.seed_label"),

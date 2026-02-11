@@ -1808,6 +1808,7 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
         use_progress_bar: bool = True,
         use_adg: bool = False,
         shift: float = 1.0,
+        guidance_rescale: float = 0.0,
         **kwargs,
     ):
         if attention_mask is None:
@@ -1934,6 +1935,13 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                                 sigma=t_curr,
                                 guidance_scale=diffusion_guidance_sale,
                             )
+                        
+                        # Guidance Rescale
+                        if guidance_rescale > 0:
+                            std_cond = pred_cond.std(dim=(1, 2), keepdim=True)
+                            std_guided = vt.std(dim=(1, 2), keepdim=True)
+                            vt_rescaled = vt * (std_cond / (std_guided + 1e-8))
+                            vt = guidance_rescale * vt_rescaled + (1.0 - guidance_rescale) * vt
                     else:
                         vt = pred_cond
                 # Update x_t based on inference method
@@ -1990,6 +1998,13 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                                     sigma=t_prev + 1e-8,
                                     guidance_scale=diffusion_guidance_sale,
                                 )
+                            
+                            # Guidance Rescale for pass 2
+                            if guidance_rescale > 0:
+                                std_cond_2 = pred_cond_2.std(dim=(1, 2), keepdim=True)
+                                std_guided_2 = vt_next.std(dim=(1, 2), keepdim=True)
+                                vt_rescaled_2 = vt_next * (std_cond_2 / (std_guided_2 + 1e-8))
+                                vt_next = guidance_rescale * vt_rescaled_2 + (1.0 - guidance_rescale) * vt_next
                         else:
                             vt_next = pred_cond_2
                     

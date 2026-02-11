@@ -122,6 +122,8 @@
     "inference_steps_info": "Turbo: 最多8, Base: 最多200",
     "guidance_scale_label": "DiT 引导比例(仅支持base模型)",
     "guidance_scale_info": "更高的值更紧密地遵循文本",
+    "guidance_rescale_label": "引导重缩放",
+    "guidance_rescale_info": "重缩放引导后的预测以匹配有条件预测的标准差。有助于防止在高引导比例下出现音频“过载”或嘈杂感。",
     "seed_label": "种子",
     "seed_info": "批量使用逗号分隔的值",
     "random_seed_label": "随机种子",

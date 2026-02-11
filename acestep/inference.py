@@ -67,6 +67,7 @@ class GenerationParams:
         cfg_interval_start: Start ratio (0.0–1.0) to apply CFG.
         cfg_interval_end: End ratio (0.0–1.0) to apply CFG.
         shift: Timestep shift factor (default 1.0). When != 1.0, applies t = shift * t / (1 + (shift - 1) * t) to timesteps.
+        guidance_rescale: Strength of guidance rescaling (0.0–1.0, default 0.0). Higher values maintain dynamic range at high CFG scales.
 
         # Task-Specific Parameters
         task_type: Type of generation task. One of: "text2music", "cover", "repaint", "lego", "extract", "complete".
@@ -123,6 +124,7 @@ class GenerationParams:
     cfg_interval_start: float = 0.0
     cfg_interval_end: float = 1.0
     shift: float = 1.0
+    guidance_rescale: float = 0.0
     infer_method: str = "ode"  # "ode", "sde", or "jkass_quality" - diffusion inference method
     # Custom timesteps (parsed from string like "0.97,0.76,0.615,0.5,0.395,0.28,0.18,0.085,0")
     # If provided, overrides inference_steps and shift
@@ -782,6 +784,7 @@ def generate_music(
             cfg_interval_end=params.cfg_interval_end,
             shift=params.shift,
             infer_method=params.infer_method,
+            guidance_rescale=params.guidance_rescale,
             timesteps=params.timesteps,
             progress=progress,
         )

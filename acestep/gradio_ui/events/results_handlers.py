@@ -483,7 +483,7 @@ def send_audio_to_src_with_metadata(audio_file, lm_metadata):
 def generate_with_progress(
     dit_handler, llm_handler,
     captions, lyrics, bpm, key_scale, time_signature, vocal_language,
-    inference_steps, guidance_scale, random_seed_checkbox, seed,
+    inference_steps, guidance_scale, guidance_rescale, random_seed_checkbox, seed,
     reference_audio, audio_duration, batch_size_input, src_audio,
     text2music_audio_code_string, repainting_start, repainting_end,
     instruction_display_gen, audio_cover_strength, task_type,
@@ -562,6 +562,7 @@ def generate_with_progress(
         shift=shift,
         infer_method=infer_method,
         timesteps=parsed_timesteps,
+        guidance_rescale=guidance_rescale,
         repainting_start=repainting_start,
         repainting_end=repainting_end,
         audio_cover_strength=audio_cover_strength,
@@ -1418,7 +1419,7 @@ def update_audio_subtitles_from_lrc(lrc_text: str, audio_duration: float = None)
 
 def capture_current_params(
     captions, lyrics, bpm, key_scale, time_signature, vocal_language,
-    inference_steps, guidance_scale, random_seed_checkbox, seed,
+    inference_steps, guidance_scale, guidance_rescale, random_seed_checkbox, seed,
     reference_audio, audio_duration, batch_size_input, src_audio,
     text2music_audio_code_string, repainting_start, repainting_end,
     instruction_display_gen, audio_cover_strength, task_type,
@@ -1443,6 +1444,7 @@ def capture_current_params(
         "vocal_language": vocal_language,
         "inference_steps": inference_steps,
         "guidance_scale": guidance_scale,
+        "guidance_rescale": guidance_rescale,
         "random_seed_checkbox": True,  # Always use random for AutoGen batches
         "seed": seed,
         "reference_audio": reference_audio,
@@ -1486,7 +1488,7 @@ def capture_current_params(
 def generate_with_batch_management(
     dit_handler, llm_handler,
     captions, lyrics, bpm, key_scale, time_signature, vocal_language,
-    inference_steps, guidance_scale, random_seed_checkbox, seed,
+    inference_steps, guidance_scale, guidance_rescale, random_seed_checkbox, seed,
     reference_audio, audio_duration, batch_size_input, src_audio,
     text2music_audio_code_string, repainting_start, repainting_end,
     instruction_display_gen, audio_cover_strength, task_type,
@@ -1515,7 +1517,7 @@ def generate_with_batch_management(
     generator = generate_with_progress(
         dit_handler, llm_handler,
         captions, lyrics, bpm, key_scale, time_signature, vocal_language,
-        inference_steps, guidance_scale, random_seed_checkbox, seed,
+        inference_steps, guidance_scale, guidance_rescale, random_seed_checkbox, seed,
         reference_audio, audio_duration, batch_size_input, src_audio,
         text2music_audio_code_string, repainting_start, repainting_end,
         instruction_display_gen, audio_cover_strength, task_type,
@@ -1582,6 +1584,7 @@ def generate_with_batch_management(
         "vocal_language": vocal_language,
         "inference_steps": inference_steps,
         "guidance_scale": guidance_scale,
+        "guidance_rescale": guidance_rescale,
         "random_seed_checkbox": random_seed_checkbox,
         "seed": seed,
         "reference_audio": reference_audio,
@@ -1763,6 +1766,7 @@ def generate_next_batch_background(
         params.setdefault("vocal_language", "unknown")
         params.setdefault("inference_steps", 8)
         params.setdefault("guidance_scale", 7.0)
+        params.setdefault("guidance_rescale", 0.0)
         params.setdefault("random_seed_checkbox", True)
         params.setdefault("seed", "-1")
         params.setdefault("reference_audio", None)
@@ -1816,6 +1820,7 @@ def generate_next_batch_background(
             vocal_language=params.get("vocal_language"),
             inference_steps=params.get("inference_steps"),
             guidance_scale=params.get("guidance_scale"),
+            guidance_rescale=params.get("guidance_rescale"),
             random_seed_checkbox=params.get("random_seed_checkbox"),
             seed=params.get("seed"),
             reference_audio=params.get("reference_audio"),
@@ -2236,7 +2241,7 @@ def restore_batch_parameters(current_batch_index, batch_queue):
     """
     if current_batch_index not in batch_queue:
         gr.Warning(t("messages.no_batch_data"))
-        return [gr.update()] * 21  # Updated count: 1 codes + 20 other params
+        return [gr.update()] * 22  # Updated count: 1 codes + 21 other params
     
     batch_data = batch_queue[current_batch_index]
     params = batch_data.get("generation_params", {})
@@ -2251,6 +2256,8 @@ def restore_batch_parameters(current_batch_index, batch_queue):
     audio_duration = params.get("audio_duration", -1)
     batch_size_input = params.get("batch_size_input", 2)
     inference_steps = params.get("inference_steps", 8)
+    guidance_scale = params.get("guidance_scale", 7.0)
+    guidance_rescale = params.get("guidance_rescale", 0.0)
     lm_temperature = params.get("lm_temperature", 0.85)
     lm_cfg_scale = params.get("lm_cfg_scale", 2.0)
     lm_top_k = params.get("lm_top_k", 0)
@@ -2280,6 +2287,7 @@ def restore_batch_parameters(current_batch_index, batch_queue):
     return (
         codes_main, captions, lyrics, bpm, key_scale, time_signature,
         vocal_language, audio_duration, batch_size_input, inference_steps,
+        guidance_scale, guidance_rescale,
         lm_temperature, lm_cfg_scale, lm_top_k, lm_top_p, lm_min_p, think_checkbox,
         use_cot_caption, use_cot_language, allow_lm_batch,
         track_name, complete_track_classes

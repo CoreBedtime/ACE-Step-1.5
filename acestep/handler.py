@@ -3008,6 +3008,7 @@ class AceStepHandler:
         audio_code_hints: Optional[Union[str, List[str]]] = None,
         infer_method: str = "ode",
         timesteps: Optional[List[float]] = None,
+        guidance_rescale: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Generate music from text inputs.
@@ -3031,6 +3032,7 @@ class AceStepHandler:
             use_adg: Whether to use ADG (Adaptive Diffusion Guidance) (default: False)
             cfg_interval_start: Start of CFG interval (0.0-1.0, default: 0.0)
             cfg_interval_end: End of CFG interval (0.0-1.0, default: 1.0)
+            guidance_rescale: Guidance rescale factor (0.0-1.0, default: 0.0)
 
         Returns:
             Dictionary containing:
@@ -3185,6 +3187,7 @@ class AceStepHandler:
             "cfg_interval_start": cfg_interval_start,
             "cfg_interval_end": cfg_interval_end,
             "shift": shift,
+            "guidance_rescale": guidance_rescale,
         }
         # Add custom timesteps if provided (convert to tensor)
         if timesteps is not None:
@@ -3682,6 +3685,7 @@ class AceStepHandler:
         cfg_interval_end: float = 1.0,
         shift: float = 1.0,
         infer_method: str = "ode",
+        guidance_rescale: float = 0.0,
         use_tiled_decode: bool = True,
         timesteps: Optional[List[float]] = None,
         progress=None,
@@ -3872,6 +3876,7 @@ class AceStepHandler:
                     cfg_interval_end=cfg_interval_end,  # Pass CFG interval end
                     shift=shift,  # Pass shift parameter
                     infer_method=infer_method,  # Pass infer method (ode, sde or jkass_quality)
+                    guidance_rescale=guidance_rescale,  # Pass guidance rescale factor
                     audio_code_hints=audio_code_hints_batch,  # Pass audio code hints as list
                     return_intermediate=should_return_intermediate,
                     timesteps=timesteps,  # Pass custom timesteps if provided

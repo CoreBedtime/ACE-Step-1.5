@@ -100,7 +100,7 @@ def load_metadata(file_obj, llm_handler=None):
     """
     if file_obj is None:
         gr.Warning(t("messages.no_file_selected"))
-        return [None] * 37 + [False]  # Return None for all fields, False for is_format_caption
+        return [None] * 38 + [False]  # Return None for all fields, False for is_format_caption
     
     try:
         # Read the uploaded file
@@ -151,6 +151,7 @@ def load_metadata(file_obj, llm_handler=None):
         batch_size = min(int(batch_size), max_batch_size)
         inference_steps = metadata.get('inference_steps', 8)
         guidance_scale = metadata.get('guidance_scale', 7.0)
+        guidance_rescale = metadata.get('guidance_rescale', 0.0)
         seed = metadata.get('seed', '-1')
         random_seed = False  # Always set to False when loading to enable reproducibility with saved seed
         use_adg = metadata.get('use_adg', False)
@@ -184,7 +185,7 @@ def load_metadata(file_obj, llm_handler=None):
         
         return (
             task_type, captions, lyrics, vocal_language, bpm, key_scale, time_signature,
-            audio_duration, batch_size, inference_steps, guidance_scale, seed, random_seed,
+            audio_duration, batch_size, inference_steps, guidance_scale, guidance_rescale, seed, random_seed,
             use_adg, cfg_interval_start, cfg_interval_end, shift, infer_method,
             custom_timesteps,  # Added: custom_timesteps (between infer_method and audio_format)
             audio_format, lm_temperature, lm_cfg_scale, lm_top_k, lm_top_p, lm_min_p, lm_negative_prompt,
@@ -196,10 +197,10 @@ def load_metadata(file_obj, llm_handler=None):
         
     except json.JSONDecodeError as e:
         gr.Warning(t("messages.invalid_json", error=str(e)))
-        return [None] * 37 + [False]
+        return [None] * 38 + [False]
     except Exception as e:
         gr.Warning(t("messages.load_error", error=str(e)))
-        return [None] * 37 + [False]
+        return [None] * 38 + [False]
 
 
 def load_random_example(task_type: str, llm_handler=None):
@@ -501,6 +502,7 @@ def get_model_type_ui_settings(is_turbo: bool):
         return (
             gr.update(value=8, maximum=20, minimum=1),  # inference_steps
             gr.update(visible=False),  # guidance_scale
+            gr.update(visible=False),  # guidance_rescale
             gr.update(visible=False),  # use_adg
             gr.update(value=3.0, visible=True),  # shift (show with default 3.0)
             gr.update(visible=False),  # cfg_interval_start
@@ -512,6 +514,7 @@ def get_model_type_ui_settings(is_turbo: bool):
         return (
             gr.update(value=32, maximum=200, minimum=1),  # inference_steps
             gr.update(visible=True),  # guidance_scale
+            gr.update(visible=True),  # guidance_rescale
             gr.update(visible=True),  # use_adg
             gr.update(value=3.0, visible=True),  # shift (effective for base, default 3.0)
             gr.update(visible=True),  # cfg_interval_start

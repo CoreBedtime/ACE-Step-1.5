@@ -495,6 +495,7 @@ class GenerateMusicRequest(BaseModel):
     use_adg: bool = False
     cfg_interval_start: float = 0.0
     cfg_interval_end: float = 1.0
+    guidance_rescale: float = 0.0
     infer_method: str = "ode"  # "ode", "sde", or "jkass_quality" - diffusion inference method
     shift: float = Field(
         default=3.0,
@@ -1520,6 +1521,7 @@ def create_app() -> FastAPI:
                     cfg_interval_start=req.cfg_interval_start,
                     cfg_interval_end=req.cfg_interval_end,
                     shift=req.shift,
+                    guidance_rescale=req.guidance_rescale,
                     infer_method=req.infer_method,
                     timesteps=parsed_timesteps,
                     repainting_start=req.repainting_start,

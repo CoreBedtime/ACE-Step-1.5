@@ -495,6 +495,7 @@ def _apply_optional_defaults(args, params_defaults: GenerationParams, config_def
         "cfg_interval_start": params_defaults.cfg_interval_start,
         "cfg_interval_end": params_defaults.cfg_interval_end,
         "shift": 3.0,
+        "guidance_rescale": params_defaults.guidance_rescale,
         "infer_method": params_defaults.infer_method,
         "timesteps": None,
         "repainting_start": params_defaults.repainting_start,
@@ -861,6 +862,7 @@ def run_wizard(args, configure_only: bool = False, default_config_path: Optional
             args.inference_steps = _prompt_int("Inference steps", args.inference_steps, min_value=1)
             if args.config_path and 'base' in args.config_path:
                 args.guidance_scale = _prompt_float("Guidance scale (for base models)", args.guidance_scale)
+                args.guidance_rescale = _prompt_float("Guidance rescale (0.0-1.0)", args.guidance_rescale, 0.0, 1.0)
                 args.use_adg = _prompt_bool("Enable Adaptive Dual Guidance (ADG)", args.use_adg)
                 args.cfg_interval_start = _prompt_float("CFG interval start (0.0-1.0)", args.cfg_interval_start, 0.0, 1.0)
                 args.cfg_interval_end = _prompt_float("CFG interval end (0.0-1.0)", args.cfg_interval_end, 0.0, 1.0)
@@ -1082,6 +1084,7 @@ def main():
         "guidance_scale": params_defaults.guidance_scale,
         "use_adg": params_defaults.use_adg,
         "shift": 3.0,
+        "guidance_rescale": params_defaults.guidance_rescale,
         "infer_method": params_defaults.infer_method,
         "timesteps": None,
         "thinking": gpu_config.init_lm_default,

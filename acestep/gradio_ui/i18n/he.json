@@ -122,6 +122,8 @@
     "inference_steps_info": "Turbo: מקסימום 8, Base: מקסימום 200",
     "guidance_scale_label": "קנה מידה להנחיה (רק למודל base)",
     "guidance_scale_info": "ערכים גבוהים יותר נצמדים יותר לטקסט",
+    "guidance_rescale_label": "שינוי קנה מידה של הנחיה",
+    "guidance_rescale_info": "שינוי קנה מידה של החיזוי המונחה כך שיתאים לסטיית התקן המותנית. עוזר למנוע אודיו רועש ברמות הנחיה גבוהות.",
     "seed_label": "גרעין (Seed)",
     "seed_info": "השתמש בערכים מופרדים בפסיקים עבור מנות",
     "random_seed_label": "גרעין אקראי",

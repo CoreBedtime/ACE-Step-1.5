@@ -122,6 +122,8 @@
     "inference_steps_info": "Turbo: max 8, Base: max 200",
     "guidance_scale_label": "DiT Guidance Scale (Only support for base model)",
     "guidance_scale_info": "Higher values follow text more closely",
+    "guidance_rescale_label": "Guidance Rescale",
+    "guidance_rescale_info": "Rescale guided prediction to match conditional std. Helps prevent crunchy audio at high guidance scales.",
     "seed_label": "Seed",
     "seed_info": "Use comma-separated values for batches",
     "random_seed_label": "Random Seed",
