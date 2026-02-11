@@ -30,9 +30,26 @@ from tqdm import tqdm
 from loguru import logger
 import warnings
 
+# Workaround for diffusers 0.36.0 + torchao NameError: name 'logger' is not defined
+try:
+    import builtins
+    import diffusers.utils.logging
+    # Temporarily add logger to builtins so the broken module can find it
+    builtins.logger = diffusers.utils.logging.get_logger("diffusers")
+except Exception:
+    pass
+
 from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
 from transformers.generation.streamers import BaseStreamer
 from diffusers.models import AutoencoderOobleck
+
+# Cleanup builtins logger after imports
+try:
+    import builtins
+    if hasattr(builtins, "logger"):
+        del builtins.logger
+except Exception:
+    pass
 from acestep.model_downloader import (
     ensure_main_model,
     ensure_dit_model,
