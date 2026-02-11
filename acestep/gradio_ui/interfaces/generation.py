@@ -816,6 +816,7 @@ def create_generation_section(dit_handler, llm_handler, init_params=None, langua
         "batch_size_input": batch_size_input,
         "inference_steps": inference_steps,
         "guidance_scale": guidance_scale,
+        "guidance_rescale": guidance_rescale,
         "seed": seed,
         "random_seed_checkbox": random_seed_checkbox,
         "use_adg": use_adg,
