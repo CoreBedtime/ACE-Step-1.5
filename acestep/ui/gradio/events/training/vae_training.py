@@ -370,7 +370,8 @@ def export_vae_decoder(export_path: str, vae_output_dir: str) -> str:
 def _get_vae(dit_handler) -> object | None:
     """Extract the VAE model from *dit_handler*.
 
-    Tries several common attribute names used in the codebase.
+    Tries the dedicated handler VAE attributes first, then falls back to a
+    nested ``model.vae`` pipeline layout when needed.
 
     Args:
         dit_handler: Initialised DiT handler instance.
@@ -378,17 +379,15 @@ def _get_vae(dit_handler) -> object | None:
     Returns:
         The VAE ``nn.Module``, or ``None`` if not found.
     """
-    # Standard path: handler.model.vae (diffusers pipeline style)
+    for attr in ("vae", "vae_model", "audio_vae"):
+        candidate = getattr(dit_handler, attr, None)
+        if candidate is not None:
+            return candidate
+
     model = getattr(dit_handler, "model", None)
     if model is not None:
         vae = getattr(model, "vae", None)
         if vae is not None:
             return vae
-
-    # Direct attribute on handler
-    for attr in ("vae", "vae_model", "audio_vae"):
-        candidate = getattr(dit_handler, attr, None)
-        if candidate is not None:
-            return candidate
 
     return None

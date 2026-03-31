@@ -30,7 +30,12 @@ def unwrap_module(module: Any) -> Any:
 class RuntimeComponentManager:
     """Temporarily offload runtime components and restore them after a task."""
 
-    def __init__(self, handler: AceStepHandler, llm: Optional[LLMHandler], app_state: Any) -> None:
+    def __init__(
+        self,
+        handler: AceStepHandler,
+        llm: Optional[LLMHandler],
+        app_state: Any | None,
+    ) -> None:
         """Capture runtime handles used by offload/restore operations."""
 
         self.handler = handler
