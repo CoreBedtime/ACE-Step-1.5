@@ -55,9 +55,6 @@ def create_gradio_interface(dit_handler, llm_handler, dataset_handler, init_para
     # Update i18n with selected language
     i18n = get_i18n(language)
     
-    # Check if running in service mode (hide training tab)
-    service_mode = init_params is not None and init_params.get('service_mode', False)
-    
     with gr.Blocks(
         title=t("app.title"),
         theme=gr.themes.Soft(),
@@ -342,7 +339,7 @@ def create_gradio_interface(dit_handler, llm_handler, dataset_handler, init_para
                 gen_section["results_wrapper"] = results_wrapper
             
             # --- Training Tab ---
-            with gr.Tab(t("training.tab_title"), visible=not service_mode):
+            with gr.Tab(t("training.tab_title")):
                 training_section = create_training_section(
                     dit_handler, llm_handler, init_params=init_params
                 )
