@@ -492,7 +492,9 @@ class TestExportVaeDecoder(unittest.TestCase):
 class TestStartVaeTrainingWrapper(unittest.TestCase):
     """start_vae_training status-stream handling."""
 
-    def _run_training(self, trainer_cls: type) -> tuple[list[tuple[object, ...]], dict]:
+    def _run_training(
+        self, trainer_cls: type, device: object = "cpu"
+    ) -> tuple[list[tuple[object, ...]], dict]:
         """Run the VAE training wrapper with a fake trainer."""
 
         from acestep.ui.gradio.events.training.vae_training import start_vae_training
@@ -503,7 +505,7 @@ class TestStartVaeTrainingWrapper(unittest.TestCase):
                 os.makedirs(audio_dir, exist_ok=True)
                 output_dir = os.path.join(tmp, "vae_out")
                 state = {"is_training": False, "should_stop": False}
-                handler = type("Handler", (), {"device": "cpu"})()
+                handler = type("Handler", (), {"device": device})()
 
                 with patch(
                     "acestep.training.vae_trainer.VaeDecoderTrainer",
@@ -583,6 +585,31 @@ class TestStartVaeTrainingWrapper(unittest.TestCase):
         self.assertGreaterEqual(len(outputs), 3)
         self.assertIn("stopped", str(outputs[-1][0]).lower())
         self.assertNotIn("finished", str(outputs[-1][0]).lower())
+        self.assertFalse(state["is_training"])
+
+    def test_cuda_cache_is_released_before_training(self) -> None:
+        """CUDA cache should be cleared before the VAE trainer starts."""
+
+        class _SuccessTrainer:
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                pass
+
+            def train(self, audio_dir, training_state, resume_from):
+                del audio_dir, training_state, resume_from
+                yield 1, 0.25, "Epoch 1/1, Step 1, Loss: 0.25000"
+
+        with patch(
+            "acestep.ui.gradio.events.training.vae_training.torch.cuda.is_available",
+            return_value=True,
+        ), patch(
+            "acestep.ui.gradio.events.training.vae_training.torch.cuda.empty_cache"
+        ) as empty_cache:
+            outputs, state = self._run_training(
+                _SuccessTrainer, device=torch.device("cuda")
+            )
+
+        empty_cache.assert_called_once()
+        self.assertGreaterEqual(len(outputs), 3)
         self.assertFalse(state["is_training"])
 
 

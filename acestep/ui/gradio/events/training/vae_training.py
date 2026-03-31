@@ -12,6 +12,7 @@ import shutil
 import time
 from typing import Dict, Iterator, Optional, Tuple
 
+import torch
 from loguru import logger
 
 from acestep.training.path_safety import safe_path
@@ -48,6 +49,20 @@ def scan_vae_dataset(audio_dir: str) -> str:
     if count == 0:
         return f"No supported audio files found under: {validated}"
     return f"Found {count} audio file(s) in: {validated}"
+
+
+def _release_idle_memory(device_type: str) -> None:
+    """Release cached accelerator memory before starting VAE training."""
+    if device_type == "cuda" and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif device_type == "xpu" and hasattr(torch, "xpu") and torch.xpu.is_available():
+        torch.xpu.empty_cache()
+    elif (
+        device_type == "mps"
+        and hasattr(torch.backends, "mps")
+        and torch.backends.mps.is_available()
+    ):
+        torch.mps.empty_cache()
 
 
 def start_vae_training(
@@ -166,6 +181,8 @@ def start_vae_training(
             pin_memory, prefetch_factor = False, 2
             persistent_workers = num_workers > 0
             pin_memory_device = ""
+
+        _release_idle_memory(device_type)
 
         cfg = VaeTrainingConfig(
             learning_rate=float(learning_rate),
