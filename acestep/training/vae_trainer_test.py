@@ -96,7 +96,7 @@ class TestVaeTrainingConfig(unittest.TestCase):
         self.assertEqual(d["max_epochs"], 10)
         self.assertIn("freeze_encoder", d)
         self.assertIn("stft_loss_weight", d)
-        self.assertNotIn("chunk_duration_s", d)
+        self.assertIn("chunk_duration_s", d)
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +402,91 @@ class TestVaeDecoderTrainerComputeLoss(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Chunked _compute_loss tests
+# ---------------------------------------------------------------------------
+
+_CHUNK_SR = 48000  # matches _VAE_SAMPLE_RATE in vae_trainer
+
+
+class _LengthAwareVAE(nn.Module):
+    """VAE mock whose decode output length matches the input chunk length."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.encoder = nn.Identity()
+        self.decoder = nn.Identity()
+
+    class _LatentDist:
+        def __init__(self, z: torch.Tensor) -> None:
+            self._z = z
+
+        def sample(self) -> torch.Tensor:
+            return self._z
+
+    class _EncOut:
+        def __init__(self, z: torch.Tensor) -> None:
+            self.latent_dist = _LengthAwareVAE._LatentDist(z)
+
+    class _DecOut:
+        def __init__(self, x: torch.Tensor) -> None:
+            self.sample = x
+
+    def encode(self, wav: torch.Tensor) -> "_LengthAwareVAE._EncOut":
+        z = torch.zeros(wav.shape[0], 4, max(1, wav.shape[-1] // 64))
+        return self._EncOut(z)
+
+    def decode(self, z: torch.Tensor) -> "_LengthAwareVAE._DecOut":
+        t = z.shape[-1] * 64
+        return self._DecOut(torch.zeros(z.shape[0], 2, t))
+
+
+class TestVaeDecoderTrainerChunkedLoss(unittest.TestCase):
+    """VaeDecoderTrainer chunked loss computation."""
+
+    def _make_trainer(self, chunk_duration_s: float = 0.5) -> Any:
+        from acestep.training.configs import VaeTrainingConfig
+        from acestep.training.vae_trainer import VaeDecoderTrainer
+
+        vae = _LengthAwareVAE()
+        cfg = VaeTrainingConfig(
+            max_epochs=1,
+            chunk_duration_s=chunk_duration_s,
+        )
+        return VaeDecoderTrainer(vae=vae, device=torch.device("cpu"), cfg=cfg)
+
+    def test_chunked_loss_is_finite(self) -> None:
+        """Chunked loss should return a finite scalar for long waveforms."""
+        trainer = self._make_trainer(chunk_duration_s=0.5)
+        # 2 seconds at 48 kHz = 96000 samples, triggers 4 chunks
+        waveform = torch.randn(1, 2, _CHUNK_SR * 2)
+        loss = trainer._compute_loss(waveform)
+        self.assertEqual(loss.shape, torch.Size([]))
+        self.assertTrue(torch.isfinite(loss))
+
+    def test_chunked_loss_is_non_negative(self) -> None:
+        """Chunked loss should be >= 0."""
+        trainer = self._make_trainer(chunk_duration_s=0.5)
+        waveform = torch.randn(1, 2, _CHUNK_SR * 2)
+        loss = trainer._compute_loss(waveform)
+        self.assertGreaterEqual(loss.item(), 0.0)
+
+    def test_short_waveform_skips_chunking(self) -> None:
+        """Waveforms shorter than chunk_duration_s should not trigger chunking."""
+        trainer = self._make_trainer(chunk_duration_s=10.0)
+        # 0.5 seconds = well under 10s threshold
+        waveform = torch.randn(1, 2, _CHUNK_SR // 2)
+        loss = trainer._compute_loss(waveform)
+        self.assertTrue(torch.isfinite(loss))
+
+    def test_chunk_duration_zero_disables_chunking(self) -> None:
+        """chunk_duration_s=0 should process the full waveform without chunking."""
+        trainer = self._make_trainer(chunk_duration_s=0.0)
+        waveform = torch.randn(1, 2, _CHUNK_SR)
+        loss = trainer._compute_loss(waveform)
+        self.assertTrue(torch.isfinite(loss))
+
+
+# ---------------------------------------------------------------------------
 # scan_vae_dataset handler tests
 # ---------------------------------------------------------------------------
 
@@ -507,12 +592,15 @@ class TestStartVaeTrainingWrapper(unittest.TestCase):
                 state = {"is_training": False, "should_stop": False}
                 handler = type("Handler", (), {"device": device})()
 
-                with patch(
-                    "acestep.training.vae_trainer.VaeDecoderTrainer",
-                    trainer_cls,
-                ), patch(
-                    "acestep.ui.gradio.events.training.vae_training._get_vae",
-                    return_value=object(),
+                with (
+                    patch(
+                        "acestep.training.vae_trainer.VaeDecoderTrainer",
+                        trainer_cls,
+                    ),
+                    patch(
+                        "acestep.ui.gradio.events.training.vae_training._get_vae",
+                        return_value=object(),
+                    ),
                 ):
                     outputs = list(
                         start_vae_training(
@@ -598,12 +686,15 @@ class TestStartVaeTrainingWrapper(unittest.TestCase):
                 del audio_dir, training_state, resume_from
                 yield 1, 0.25, "Epoch 1/1, Step 1, Loss: 0.25000"
 
-        with patch(
-            "acestep.ui.gradio.events.training.vae_training.torch.cuda.is_available",
-            return_value=True,
-        ), patch(
-            "acestep.ui.gradio.events.training.vae_training.torch.cuda.empty_cache"
-        ) as empty_cache:
+        with (
+            patch(
+                "acestep.ui.gradio.events.training.vae_training.torch.cuda.is_available",
+                return_value=True,
+            ),
+            patch(
+                "acestep.ui.gradio.events.training.vae_training.torch.cuda.empty_cache"
+            ) as empty_cache,
+        ):
             outputs, state = self._run_training(
                 _SuccessTrainer, device=torch.device("cuda")
             )

@@ -54,6 +54,8 @@ from acestep.training.vae_data_module import VaeDataModule
 # Multi-scale STFT loss
 # ---------------------------------------------------------------------------
 
+_VAE_SAMPLE_RATE = 48000
+
 _STFT_SCALES: List[Tuple[int, int, int]] = [
     # (n_fft, hop_length, win_length)
     (2048, 512, 2048),
@@ -416,7 +418,9 @@ class VaeDecoderTrainer:
             waveform = waveform.unsqueeze(0)
 
         if lengths is not None:
-            valid_lengths = [max(1, int(length)) for length in lengths.detach().cpu().tolist()]
+            valid_lengths = [
+                max(1, int(length)) for length in lengths.detach().cpu().tolist()
+            ]
             if waveform.shape[0] > 1:
                 sample_losses = []
                 for index, valid_length in enumerate(valid_lengths):
@@ -426,6 +430,22 @@ class VaeDecoderTrainer:
             if valid_lengths:
                 waveform = waveform[..., : valid_lengths[0]]
 
+        # Chunked processing to cap peak VRAM per encode/decode call
+        chunk_samples = int(self.cfg.chunk_duration_s * _VAE_SAMPLE_RATE)
+        if chunk_samples > 0 and waveform.shape[-1] > chunk_samples:
+            return self._compute_loss_chunked(waveform, chunk_samples)
+
+        return self._compute_loss_single(waveform)
+
+    def _compute_loss_single(self, waveform: torch.Tensor) -> torch.Tensor:
+        """Encode → decode a single waveform and return reconstruction loss.
+
+        Args:
+            waveform: ``[1, 2, T]`` float32 waveform tensor on device.
+
+        Returns:
+            Scalar combined loss tensor (float32).
+        """
         if self.device_type in ("cuda", "xpu", "mps"):
             ctx = torch.autocast(device_type=self.device_type, dtype=self.dtype)
         else:
@@ -457,6 +477,38 @@ class VaeDecoderTrainer:
 
         loss = self.cfg.l1_loss_weight * l1 + self.cfg.stft_loss_weight * stft
         return loss.float()
+
+    def _compute_loss_chunked(
+        self,
+        waveform: torch.Tensor,
+        chunk_samples: int,
+    ) -> torch.Tensor:
+        """Compute reconstruction loss by processing non-overlapping chunks.
+
+        Splits a long waveform into chunks of at most *chunk_samples*,
+        processes each chunk independently through encode → decode, and
+        averages the per-chunk losses.  This caps peak VRAM to the cost of
+        a single chunk rather than the full file length.
+
+        Args:
+            waveform: ``[1, 2, T]`` float32 waveform tensor on device.
+            chunk_samples: Maximum number of audio samples per chunk.
+
+        Returns:
+            Scalar mean loss across chunks (float32).
+        """
+        T = waveform.shape[-1]
+        num_chunks = math.ceil(T / chunk_samples)
+        chunk_losses: List[torch.Tensor] = []
+
+        for i in range(num_chunks):
+            start = i * chunk_samples
+            end = min(start + chunk_samples, T)
+            chunk = waveform[..., start:end]
+            chunk_loss = self._compute_loss_single(chunk)
+            chunk_losses.append(chunk_loss)
+
+        return torch.stack(chunk_losses).mean()
 
     def _build_optimizer(
         self,

@@ -195,6 +195,8 @@ class VaeTrainingConfig:
         l1_loss_weight: Weight for waveform L1 loss.
         mixed_precision: Preferred precision label for logging.
         freeze_encoder: If True, freeze VAE encoder and only train decoder.
+        chunk_duration_s: Max audio chunk duration in seconds for encode/decode
+            to limit peak VRAM.  0 disables chunking (whole-file processing).
     """
 
     learning_rate: float = 1e-4
@@ -229,6 +231,9 @@ class VaeTrainingConfig:
     mixed_precision: str = "bf16"
     freeze_encoder: bool = True
 
+    # Memory management
+    chunk_duration_s: float = 10.0  # Max chunk length in seconds (0 = disabled)
+
     def __post_init__(self) -> None:
         if not 0.0 <= self.val_split < 1.0:
             raise ValueError("val_split must be in [0.0, 1.0).")
@@ -257,4 +262,5 @@ class VaeTrainingConfig:
             "l1_loss_weight": self.l1_loss_weight,
             "mixed_precision": self.mixed_precision,
             "freeze_encoder": self.freeze_encoder,
+            "chunk_duration_s": self.chunk_duration_s,
         }
