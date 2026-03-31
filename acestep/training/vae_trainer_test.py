@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import torch
 import torch.nn as nn
-import torchaudio
+import soundfile as sf
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +168,7 @@ def _write_dummy_wav(path: str, sr: int = 48000, duration_s: float = 2.0) -> Non
     """Write a minimal silent WAV to *path*."""
     n_frames = int(sr * duration_s)
     waveform = torch.zeros(2, n_frames)
-    torchaudio.save(path, waveform, sr, format="wav")
+    sf.write(path, waveform.transpose(0, 1).numpy(), sr, format="WAV")
 
 
 class TestVaeAudioDataset(unittest.TestCase):
@@ -195,16 +195,23 @@ class TestVaeAudioDataset(unittest.TestCase):
                 ds = VaeAudioDataset(audio_dir=tmp)
                 self.assertEqual(len(ds), 2)
 
-    def test_too_short_file_is_skipped(self) -> None:
-        """Files shorter than the VAE minimum should not enter the dataset."""
-        from acestep.training.vae_data_module import VaeAudioDataset
+    def test_too_short_file_is_padded_to_minimum_length(self) -> None:
+        """Files shorter than the VAE minimum should be padded, not dropped."""
+        from acestep.training.vae_data_module import (
+            VaeAudioDataset,
+            _MIN_AUDIO_SAMPLES,
+        )
 
         with _bypass_safe_path():
             with tempfile.TemporaryDirectory() as tmp:
                 _write_dummy_wav(os.path.join(tmp, "tiny.wav"), duration_s=0.001)
                 _write_dummy_wav(os.path.join(tmp, "ok.wav"), duration_s=2.0)
                 ds = VaeAudioDataset(audio_dir=tmp)
-                self.assertEqual(len(ds), 1)
+                self.assertEqual(len(ds), 2)
+
+                tiny = ds[0]
+                self.assertEqual(tiny["waveform"].shape, (2, _MIN_AUDIO_SAMPLES))
+                self.assertEqual(int(tiny["length"].item()), _MIN_AUDIO_SAMPLES)
 
     def test_item_has_correct_shape(self) -> None:
         """Each item should contain the full loaded waveform."""

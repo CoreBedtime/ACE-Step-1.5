@@ -7,13 +7,13 @@ simple so the trainer can treat each source file as a single sample.
 
 from __future__ import annotations
 
-import math
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import torch
 import torch.nn.functional as F
+import soundfile as sf
 import torchaudio
 from loguru import logger
 from torch.utils.data import Dataset
@@ -63,19 +63,6 @@ def _scan_audio_files(root: str) -> List[str]:
     return found
 
 
-def _estimate_resampled_frames(path: str) -> Optional[int]:
-    """Estimate the clip length after resampling to the target sample rate."""
-    try:
-        meta = torchaudio.info(path)
-    except Exception as exc:
-        logger.debug(f"Failed to read audio metadata for {path}: {exc}")
-        return None
-
-    if meta.sample_rate <= 0 or meta.num_frames <= 0:
-        return None
-    return int(math.ceil(meta.num_frames * _TARGET_SR / meta.sample_rate))
-
-
 def _load_audio_file(path: str) -> Optional[torch.Tensor]:
     """Load and normalise a single audio file.
 
@@ -86,21 +73,22 @@ def _load_audio_file(path: str) -> Optional[torch.Tensor]:
         Float32 waveform tensor ``[2, T]``, or ``None`` on error.
     """
     try:
-        waveform, sr = torchaudio.load(path)
+        audio_np, sr = sf.read(path, dtype="float32", always_2d=True)
+        waveform = torch.from_numpy(audio_np.T)
 
         if sr != _TARGET_SR:
             resampler = torchaudio.transforms.Resample(sr, _TARGET_SR)
             waveform = resampler(waveform)
 
         if waveform.shape[0] == 1:
-            waveform = waveform.expand(2, -1)
+            waveform = waveform.repeat(2, 1)
         elif waveform.shape[0] > 2:
             waveform = waveform[:2]
 
         if waveform.shape[-1] == 0:
             return None
 
-        return waveform.float()
+        return waveform.float().contiguous().clamp(-1.0, 1.0)
     except Exception as exc:
         logger.debug(f"Failed to load audio file {path}: {exc}")
         return None
@@ -122,31 +110,11 @@ class VaeAudioDataset(Dataset):
             raise ValueError(f"Not an existing directory: {audio_dir}")
         self.audio_dir = validated
 
-        self._files = []
-        skipped = 0
-        for path in _scan_audio_files(validated):
-            estimated_frames = _estimate_resampled_frames(path)
-            if estimated_frames is None:
-                skipped += 1
-                logger.debug(f"Skipping unreadable audio file: {path}")
-                continue
-            if estimated_frames < _MIN_AUDIO_SAMPLES:
-                skipped += 1
-                logger.debug(
-                    "Skipping too-short audio file ({} samples after resample): {}",
-                    estimated_frames,
-                    path,
-                )
-                continue
-            self._files.append(path)
+        self._files = _scan_audio_files(validated)
 
         if not self._files:
             raise ValueError(f"No audio files found under: {audio_dir}")
 
-        if skipped:
-            logger.warning(
-                f"VaeAudioDataset skipped {skipped} unreadable or too-short files"
-            )
         logger.info(f"VaeAudioDataset: {len(self._files)} files in {validated}")
 
     def __len__(self) -> int:
