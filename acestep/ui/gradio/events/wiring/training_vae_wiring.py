@@ -11,6 +11,7 @@ from typing import Any, Callable, Iterator
 
 from loguru import logger
 
+from acestep.api.train_api_runtime import RuntimeComponentManager
 from acestep.ui.gradio.events.training.vae_training import (
     export_vae_decoder,
     scan_vae_dataset,
@@ -22,12 +23,14 @@ from .context import TrainingWiringContext
 
 def _build_vae_training_wrapper(
     dit_handler: Any,
+    llm_handler: Any,
     normalize_training_state: Callable[[Any], dict[str, bool]],
 ) -> Callable[..., Iterator[tuple[Any, Any, Any, dict[str, bool]]]]:
     """Build a closure that streams VAE training progress.
 
     Args:
         dit_handler: Initialised DiT handler passed to the trainer.
+        llm_handler: Optional LLM handler to temporarily unload during VAE training.
         normalize_training_state: Callable that coerces any state value to
             a valid ``dict[str, bool]`` mapping.
 
@@ -54,7 +57,16 @@ def _build_vae_training_wrapper(
         """Stream VAE training progress; normalise failure outputs for the UI."""
 
         state = normalize_training_state(training_state)
+        component_manager: RuntimeComponentManager | None = None
         try:
+            component_manager = RuntimeComponentManager(
+                handler=dit_handler,
+                llm=llm_handler,
+                app_state=None,
+            )
+            component_manager.offload_model_to_cpu()
+            component_manager.offload_text_encoder_to_cpu()
+            component_manager.unload_llm()
             yield from start_vae_training(
                 audio_dir=audio_dir,
                 dit_handler=dit_handler,
@@ -75,6 +87,9 @@ def _build_vae_training_wrapper(
         except Exception as exc:  # pragma: no cover — defensive UI wrapper
             logger.exception("VAE training wrapper error")
             yield f"\u274c Error: {exc!s}", f"{exc!s}", None, state
+        finally:
+            if component_manager is not None:
+                component_manager.restore()
 
     return vae_training_wrapper
 
@@ -95,7 +110,9 @@ def register_vae_training_handlers(
     """
     s = context.training_section
     vae_wrapper = _build_vae_training_wrapper(
-        context.dit_handler, normalize_training_state
+        context.dit_handler,
+        context.llm_handler,
+        normalize_training_state,
     )
 
     # -- Dataset scan --
