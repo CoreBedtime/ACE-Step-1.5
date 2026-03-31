@@ -195,6 +195,17 @@ class TestVaeAudioDataset(unittest.TestCase):
                 ds = VaeAudioDataset(audio_dir=tmp)
                 self.assertEqual(len(ds), 2)
 
+    def test_too_short_file_is_skipped(self) -> None:
+        """Files shorter than the VAE minimum should not enter the dataset."""
+        from acestep.training.vae_data_module import VaeAudioDataset
+
+        with _bypass_safe_path():
+            with tempfile.TemporaryDirectory() as tmp:
+                _write_dummy_wav(os.path.join(tmp, "tiny.wav"), duration_s=0.001)
+                _write_dummy_wav(os.path.join(tmp, "ok.wav"), duration_s=2.0)
+                ds = VaeAudioDataset(audio_dir=tmp)
+                self.assertEqual(len(ds), 1)
+
     def test_item_has_correct_shape(self) -> None:
         """Each item should contain the full loaded waveform."""
         from acestep.training.vae_data_module import VaeAudioDataset

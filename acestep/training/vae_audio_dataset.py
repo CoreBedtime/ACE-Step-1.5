@@ -7,6 +7,7 @@ simple so the trainer can treat each source file as a single sample.
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -19,6 +20,9 @@ from torch.utils.data import Dataset
 
 _TARGET_SR: int = 48_000
 _TARGET_CHANNELS: int = 2
+# The Oobleck encoder uses a 2x4x4x8x8 downsampling path, so clips shorter
+# than 2048 samples cannot survive the first strided conv stack.
+_MIN_AUDIO_SAMPLES: int = 2_048
 
 _SUPPORTED_EXTENSIONS: tuple[str, ...] = (
     ".wav",
@@ -57,6 +61,19 @@ def _scan_audio_files(root: str) -> List[str]:
                 found.append(os.path.join(dirpath, fname))
     found.sort()
     return found
+
+
+def _estimate_resampled_frames(path: str) -> Optional[int]:
+    """Estimate the clip length after resampling to the target sample rate."""
+    try:
+        meta = torchaudio.info(path)
+    except Exception as exc:
+        logger.debug(f"Failed to read audio metadata for {path}: {exc}")
+        return None
+
+    if meta.sample_rate <= 0 or meta.num_frames <= 0:
+        return None
+    return int(math.ceil(meta.num_frames * _TARGET_SR / meta.sample_rate))
 
 
 def _load_audio_file(path: str) -> Optional[torch.Tensor]:
@@ -105,10 +122,31 @@ class VaeAudioDataset(Dataset):
             raise ValueError(f"Not an existing directory: {audio_dir}")
         self.audio_dir = validated
 
-        self._files = _scan_audio_files(validated)
+        self._files = []
+        skipped = 0
+        for path in _scan_audio_files(validated):
+            estimated_frames = _estimate_resampled_frames(path)
+            if estimated_frames is None:
+                skipped += 1
+                logger.debug(f"Skipping unreadable audio file: {path}")
+                continue
+            if estimated_frames < _MIN_AUDIO_SAMPLES:
+                skipped += 1
+                logger.debug(
+                    "Skipping too-short audio file ({} samples after resample): {}",
+                    estimated_frames,
+                    path,
+                )
+                continue
+            self._files.append(path)
+
         if not self._files:
             raise ValueError(f"No audio files found under: {audio_dir}")
 
+        if skipped:
+            logger.warning(
+                f"VaeAudioDataset skipped {skipped} unreadable or too-short files"
+            )
         logger.info(f"VaeAudioDataset: {len(self._files)} files in {validated}")
 
     def __len__(self) -> int:
@@ -123,7 +161,11 @@ class VaeAudioDataset(Dataset):
         path = self._files[idx]
         waveform = _load_audio_file(path)
         if waveform is None:
-            waveform = torch.zeros(_TARGET_CHANNELS, 1)
+            logger.warning(f"Using silence fallback for unreadable audio file: {path}")
+            waveform = torch.zeros(_TARGET_CHANNELS, _MIN_AUDIO_SAMPLES)
+        elif waveform.shape[-1] < _MIN_AUDIO_SAMPLES:
+            pad = _MIN_AUDIO_SAMPLES - waveform.shape[-1]
+            waveform = F.pad(waveform, (0, pad))
         return {
             "waveform": waveform,
             "length": torch.tensor(waveform.shape[-1], dtype=torch.long),
