@@ -67,6 +67,34 @@ class TrainingDecompositionContractTests(unittest.TestCase):
         self.assertIn("create_training_vae_tab", call_names)
         self.assertGreaterEqual(update_calls, 5)
 
+    def test_training_tab_is_not_service_mode_hidden(self) -> None:
+        """The top-level training tab should remain visible in the interface."""
+
+        module = ast.parse(
+            (Path(__file__).resolve().parent / "__init__.py").read_text(
+                encoding="utf-8"
+            )
+        )
+        found_training_tab = False
+        for node in ast.walk(module):
+            if not isinstance(node, ast.Call):
+                continue
+            if call_name(node.func) != "Tab" or not node.args:
+                continue
+
+            label = ast.unparse(node.args[0])
+            if label not in {"t('training.tab_title')", 't("training.tab_title")'}:
+                continue
+
+            found_training_tab = True
+            self.assertFalse(
+                any(keyword.arg == "visible" for keyword in node.keywords),
+                "Training tab should not be hidden by service_mode",
+            )
+            break
+
+        self.assertTrue(found_training_tab, "Training tab call not found")
+
     def test_dataset_builder_tab_delegates_to_section_builders(self) -> None:
         """Dataset-builder facade should delegate to scan/label/preprocess builders."""
 
