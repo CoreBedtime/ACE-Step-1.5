@@ -197,10 +197,8 @@ class TestVaeAudioDataset(unittest.TestCase):
 
     def test_too_short_file_is_padded_to_minimum_length(self) -> None:
         """Files shorter than the VAE minimum should be padded, not dropped."""
-        from acestep.training.vae_data_module import (
-            VaeAudioDataset,
-            _MIN_AUDIO_SAMPLES,
-        )
+        from acestep.training.vae_audio_dataset import _MIN_AUDIO_SAMPLES
+        from acestep.training.vae_data_module import VaeAudioDataset
 
         with _bypass_safe_path():
             with tempfile.TemporaryDirectory() as tmp:
@@ -209,9 +207,15 @@ class TestVaeAudioDataset(unittest.TestCase):
                 ds = VaeAudioDataset(audio_dir=tmp)
                 self.assertEqual(len(ds), 2)
 
-                tiny = ds[0]
-                self.assertEqual(tiny["waveform"].shape, (2, _MIN_AUDIO_SAMPLES))
-                self.assertEqual(int(tiny["length"].item()), _MIN_AUDIO_SAMPLES)
+                items = [ds[i] for i in range(len(ds))]
+                lengths = sorted(int(item["length"].item()) for item in items)
+                self.assertEqual(lengths, [_MIN_AUDIO_SAMPLES, 96000])
+                self.assertTrue(
+                    any(
+                        item["waveform"].shape == (2, _MIN_AUDIO_SAMPLES)
+                        for item in items
+                    )
+                )
 
     def test_item_has_correct_shape(self) -> None:
         """Each item should contain the full loaded waveform."""
