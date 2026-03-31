@@ -26,7 +26,7 @@ class TrainingDecompositionContractTests(unittest.TestCase):
     """Verify the training interface facade composes focused helper modules."""
 
     def test_training_facade_imports_tab_helpers(self) -> None:
-        """``training.py`` should import dataset, LoRA, LoKr, and VAE helpers."""
+        """``training.py`` should import dataset, LoRA, and LoKr helpers."""
 
         module = load_module("training.py")
         imported_modules = []
@@ -44,7 +44,6 @@ class TrainingDecompositionContractTests(unittest.TestCase):
         self.assertIn(
             "acestep.ui.gradio.interfaces.training_lokr_tab", imported_modules
         )
-        self.assertIn("acestep.ui.gradio.interfaces.training_vae_tab", imported_modules)
 
     def test_training_facade_merges_helper_sections(self) -> None:
         """``training.py`` should compose helper returns into one training-section map."""
@@ -64,8 +63,34 @@ class TrainingDecompositionContractTests(unittest.TestCase):
         self.assertIn("create_dataset_builder_tab", call_names)
         self.assertIn("create_training_lora_tab", call_names)
         self.assertIn("create_training_lokr_tab", call_names)
-        self.assertIn("create_training_vae_tab", call_names)
-        self.assertGreaterEqual(update_calls, 5)
+        self.assertGreaterEqual(update_calls, 4)
+
+    def test_top_level_interface_exposes_vae_tab(self) -> None:
+        """The top-level Gradio shell should expose VAE as a direct tab."""
+
+        module = load_module("__init__.py")
+        imported_modules = []
+        call_names: list[str] = []
+        saw_vae_tab = False
+        for node in ast.walk(module):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                imported_modules.append(node.module)
+            if not isinstance(node, ast.Call):
+                continue
+            name = call_name(node.func)
+            if name:
+                call_names.append(name)
+            if name != "Tab" or not node.args:
+                continue
+            label = ast.unparse(node.args[0])
+            if label in {"t('vae.tab_title')", 't("vae.tab_title")'}:
+                saw_vae_tab = True
+
+        self.assertIn(
+            "acestep.ui.gradio.interfaces.training_vae_tab", imported_modules
+        )
+        self.assertIn("build_vae_training_controls", call_names)
+        self.assertTrue(saw_vae_tab, "Top-level VAE tab call not found")
 
     def test_training_tab_is_not_service_mode_hidden(self) -> None:
         """The top-level training tab should remain visible in the interface."""
@@ -116,6 +141,7 @@ class TrainingDecompositionContractTests(unittest.TestCase):
         produced_keys: set[str] = set()
         key_sources = [
             ("training.py", "create_training_section"),
+            ("training_vae_tab.py", "build_vae_training_controls"),
             (
                 "training_dataset_tab_scan_settings.py",
                 "build_dataset_scan_and_settings_controls",

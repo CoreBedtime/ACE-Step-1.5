@@ -14,11 +14,11 @@ Layout:
   │   ├─ LM Parameters                   │
   │   └─ Output / Automation             │
   ├──────────────────────────────────────┤
-  │  ┌─ Generation ─┬─ Training ──────┐  │
-  │  │  Mode Radio   │  Dataset/LoRA  │  │
-  │  │  Inputs       │                │  │
-  │  │  Results      │                │  │
-  │  └───────────────┴────────────────┘  │
+  │  ┌─ Generation ─┬─ Training ─┬─ VAE Decoder ─┐  │
+  │  │  Mode Radio   │  Dataset   │  VAE controls │  │
+  │  │  Inputs       │  /LoRA/    │               │  │
+  │  │  Results      │  LoKr      │               │  │
+  │  └───────────────┴────────────┴───────────────┘  │
   └──────────────────────────────────────┘
 """
 import gradio as gr
@@ -33,6 +33,7 @@ from acestep.ui.gradio.interfaces.audio_player_preferences import (
 )
 from acestep.ui.gradio.interfaces.result import create_results_section
 from acestep.ui.gradio.interfaces.training import create_training_section
+from acestep.ui.gradio.interfaces.training_vae_tab import build_vae_training_controls
 from acestep.ui.gradio.events import setup_event_handlers, setup_training_event_handlers
 from acestep.ui.gradio.help_content import create_help_button, HELP_MODAL_CSS
 
@@ -343,6 +344,10 @@ def create_gradio_interface(dit_handler, llm_handler, dataset_handler, init_para
                 training_section = create_training_section(
                     dit_handler, llm_handler, init_params=init_params
                 )
+
+            # --- VAE Decoder Tab ---
+            with gr.Tab(t("vae.tab_title")):
+                vae_section = build_vae_training_controls()
         
         # ═══════════════════════════════════════════
         # Merge all generation-related component dicts for event wiring
@@ -352,6 +357,7 @@ def create_gradio_interface(dit_handler, llm_handler, dataset_handler, init_para
         generation_section = {}
         generation_section.update(settings_section)
         generation_section.update(gen_section)
+        training_section.update(vae_section)
         
         # Connect event handlers
         setup_event_handlers(

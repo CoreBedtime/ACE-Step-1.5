@@ -308,7 +308,8 @@
     "timesteps_count_mismatch": "⚠️ 时间步数量 ({actual}) 与推理步数 ({expected}) 不匹配，将使用时间步数量。"
   },
   "training": {
-    "tab_title": "🎓 LoRA 训练",
+    "tab_title": "🎓 训练",
+    "vae.tab_title": "🧬 VAE 解码器",
     "tab_dataset_builder": "📁 数据集构建",
     "tab_train_lora": "🚀 训练 LoRA",
     "quick_start_title": "🚀 快速开始",

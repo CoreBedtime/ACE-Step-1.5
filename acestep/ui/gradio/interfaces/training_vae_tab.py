@@ -9,6 +9,40 @@ from __future__ import annotations
 
 import gradio as gr
 
+from acestep.ui.gradio.i18n import t
+
+
+def build_vae_training_controls() -> dict[str, object]:
+    """Build the VAE decoder fine-tuning controls.
+
+    Returns:
+        Mapping of component keys to Gradio components for event wiring.
+    """
+    gr.HTML(
+        """
+        <div style="margin-bottom: 12px;">
+          <h3>VAE Decoder Fine-Tuning</h3>
+          <p>
+            Fine-tune the <b>AutoencoderOobleck</b> decoder on your audio dataset.
+            The encoder is kept frozen; only decoder parameters are trained using a
+            weighted L1 + multi-scale STFT reconstruction loss.
+          </p>
+          <p style="color: #888; font-size: 0.9em;">
+            Requires raw audio files (WAV/FLAC/MP3/OGG) — no preprocessing needed.
+            Each file is used as a whole sample, without chunking or windowing.
+          </p>
+        </div>
+        """
+    )
+
+    tab_controls: dict[str, object] = {}
+    tab_controls.update(_build_vae_dataset_controls())
+    tab_controls.update(_build_vae_hyperparameter_controls())
+    tab_controls.update(_build_vae_run_controls())
+    tab_controls.update(_build_vae_export_controls())
+
+    return tab_controls
+
 
 def create_training_vae_tab() -> dict[str, object]:
     """Create the VAE decoder fine-tuning tab.
@@ -16,31 +50,8 @@ def create_training_vae_tab() -> dict[str, object]:
     Returns:
         Mapping of component keys to Gradio components for event wiring.
     """
-    with gr.Tab("VAE Decoder"):
-        gr.HTML(
-            """
-            <div style="margin-bottom: 12px;">
-              <h3>VAE Decoder Fine-Tuning</h3>
-              <p>
-                Fine-tune the <b>AutoencoderOobleck</b> decoder on your audio dataset.
-                The encoder is kept frozen; only decoder parameters are trained using a
-                weighted L1 + multi-scale STFT reconstruction loss.
-              </p>
-              <p style="color: #888; font-size: 0.9em;">
-                Requires raw audio files (WAV/FLAC/MP3/OGG) — no preprocessing needed.
-                Each file is used as a whole sample, without chunking or windowing.
-              </p>
-            </div>
-            """
-        )
-
-        tab_controls: dict[str, object] = {}
-        tab_controls.update(_build_vae_dataset_controls())
-        tab_controls.update(_build_vae_hyperparameter_controls())
-        tab_controls.update(_build_vae_run_controls())
-        tab_controls.update(_build_vae_export_controls())
-
-    return tab_controls
+    with gr.Tab(t("vae.tab_title")):
+        return build_vae_training_controls()
 
 
 # ---------------------------------------------------------------------------

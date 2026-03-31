@@ -337,7 +337,8 @@
     "audio_format_invalid": "{role} format is invalid or unsupported. Please upload a valid audio file."
   },
   "training": {
-    "tab_title": "🎓 LoRA Training",
+    "tab_title": "🎓 Training",
+    "vae.tab_title": "🧬 VAE Decoder",
     "tab_dataset_builder": "📁 Dataset Builder",
     "tab_train_lora": "🚀 Train LoRA",
     "quick_start_title": "🚀 Quick Start",

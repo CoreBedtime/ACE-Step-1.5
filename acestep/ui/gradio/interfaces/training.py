@@ -10,7 +10,6 @@ from acestep.ui.gradio.interfaces.training_dataset_builder_tab import (
 )
 from acestep.ui.gradio.interfaces.training_lokr_tab import create_training_lokr_tab
 from acestep.ui.gradio.interfaces.training_lora_tab import create_training_lora_tab
-from acestep.ui.gradio.interfaces.training_vae_tab import create_training_vae_tab
 
 
 def _resolve_epoch_slider_defaults() -> tuple[int, int, int]:
@@ -58,7 +57,6 @@ def create_training_section(dit_handler, llm_handler, init_params=None) -> dict:
             )
         )
         training_section.update(create_training_lokr_tab())
-        training_section.update(create_training_vae_tab())
         dataset_builder_state = gr.State(None)
         training_state = gr.State({"is_training": False, "should_stop": False})
         training_section.update(

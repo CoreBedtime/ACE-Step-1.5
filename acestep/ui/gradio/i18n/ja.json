@@ -308,7 +308,8 @@
     "timesteps_count_mismatch": "⚠️ タイムステップ数 ({actual}) が推論ステップ数 ({expected}) と異なります。タイムステップ数を使用します。"
   },
   "training": {
-    "tab_title": "🎓 LoRA トレーニング",
+    "tab_title": "🎓 トレーニング",
+    "vae.tab_title": "🧬 VAE デコーダー",
     "tab_dataset_builder": "📁 データセットビルダー",
     "tab_train_lora": "🚀 LoRA をトレーニング",
     "quick_start_title": "🚀 クイックスタート",
